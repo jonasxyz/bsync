@@ -21,9 +21,9 @@ module.exports =
 
         } else if (fileformat === ".py") {
             if (headless == true) {
-                ls = spawn("conda run -n openwpm --no-capture-output python -u", [crawl_script, url, "headless", waitingTime], { shell: true, cwd: script_path, stdio: "pipe" });
+                ls = spawn("conda run -n openwpm --no-capture-output python -u", [crawl_script, url, "headless", proxy_host, proxy_port, userAgent, waitingTime], { shell: true, cwd: script_path, stdio: "pipe" });
             } else {
-                ls = spawn("conda run -n openwpm --no-capture-output python -u", [crawl_script, url, "native", waitingTime], { shell: true, cwd: script_path, stdio: "pipe" });
+                ls = spawn("conda run -n openwpm --no-capture-output python -u", [crawl_script, url, "native", proxy_host, proxy_port, userAgent, waitingTime], { shell: true, cwd: script_path, stdio: "pipe" });
             }
             console.log("spawned .py childprocess");
 
@@ -74,11 +74,12 @@ module.exports =
         console.log("Child process killed.");
     },
 
-    spawnProxy: function () {
+    spawnProxy: function (proxy_host, proxy_port, har_destination, script_location) {
 
         let urlSaveName = "/" + tempUrl.replace(/^https?\:\/\//i, "");
-        proxy = spawn("mitmdump", ["--listen-host=" + proxy_host, "--listen-port=" + proxy_port, "--set=hardump=" + har_destination + urlSaveName, "-s har_dump.py"]);
+        proxy = spawn("mitmdump", ["--listen-host=" + proxy_host, "--listen-port=" + proxy_port, "--set=hardump=" + har_destination + urlSaveName, "-s /"+script_location+"/har_dump.py"]);
 
+        console.log("proxy spawned")
         proxy.stderr.on("data", (err) => {
 
             console.log("proxy error: " + err.toString());

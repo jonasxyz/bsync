@@ -12,6 +12,9 @@ const crawl_script = "startPuppeteer.js" // e.g. "puppeteer.js"
 const script_path = "./"
 const master_addr = "http://192.168.178.73:3000" // e.g. "http://localhost:3000"
 
+const disable_proxy = false; // set true to disable mitmproxy
+const har_destination = "/home/user/Schreibtisch/client/poc6plus/http/" // e.g. "/home/user/"
+
 const proxy_host = "localhost";
 const proxy_port = "3031";
 const proxy_script_location ="/home/user/Schreibtisch/client/poc6plus/functions"
@@ -98,10 +101,15 @@ socket.on("url", data => {
 
 socket.on("killchildprocess", data => {
 
-  console.log("Crawl cancelled at master\nKilling child process...");
+  if(data.toString() === "timeout") {
+    console.log("Browser timed out\nKilling child process...");
+  }else{
+    console.log("Crawl cancelled at master\nKilling child process...");
+
+  }
   //if(spawnedScripts.mycrawler !== undefined) {
     //spawnedScripts.mycrawler.kill("SIGINT");
-    spawnedScripts.killCrawler();
+  spawnedScripts.killCrawler();
 
 });
 

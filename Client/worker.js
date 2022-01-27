@@ -12,11 +12,9 @@ const crawl_script = "startPuppeteer.js" // e.g. "puppeteer.js"
 const script_path = "./"
 const master_addr = "http://192.168.178.73:3000" // e.g. "http://localhost:3000"
 
-const disable_proxy = true; // set true to disable mitmproxy
-const har_destination = "/home/user/Schreibtisch/client/http/" // e.g. "/home/user/"
-
 const proxy_host = "localhost";
 const proxy_port = "3031";
+const proxy_script_location ="/home/user/Schreibtisch/client/poc6plus/functions"
 /*******************************************************************************************************************************/
 
 var waitingTime = 0;
@@ -85,15 +83,16 @@ socket.on("url", data => {
       url = data;
     }
 
-    if (disable_proxy==false){
-      spawnedScripts.spawnProxy(proxy_host, proxy_port, har_destination);
-    } 
+    
     
 
-    spawnedScripts.spawnCrawler(crawl_script, url, client_name, script_path, headless, disable_proxy, proxy_host, proxy_port, client_name, waitingTime);
+    spawnedScripts.spawnCrawler(crawl_script, url, client_name, script_path, headless, disable_proxy, proxy_host, proxy_port, "False", waitingTime);
     //console.log(spawnedScripts.mycrawler)
   } //https://stackoverflow.com/questions/57108371/exporting-multiple-functions-with-arguments
 
+  if (disable_proxy==false){
+    spawnedScripts.spawnProxy(proxy_host, proxy_port, har_destination, proxy_script_location);
+  } 
 
 })
 

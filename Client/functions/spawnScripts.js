@@ -13,7 +13,7 @@ module.exports =
         fileformat = path.extname(crawl_script);
 
         if (fileformat === ".js") {
-            ls = spawn('node', [crawl_script, url, headless, proxy_host, proxy_port, userAgent, waitingTime], { cwd: script_path, stdio: ["pipe"] });
+            ls = spawn('node', [crawl_script, url, headless, proxy_host, proxy_port, userAgent, waitingTime], { cwd: script_path, stdio: "pipe", detached: true  });
             console.log("spawned .js childprocess");
             //console.log(sId);
 
@@ -21,9 +21,9 @@ module.exports =
 
         } else if (fileformat === ".py") {
             if (headless == true) {
-                ls = spawn("conda run -n openwpm --no-capture-output python -u", [crawl_script, url, "headless", proxy_host, proxy_port, userAgent, waitingTime], { shell: true, cwd: script_path, stdio: "pipe" });
+                ls = spawn("conda run -n openwpm --no-capture-output python -u", [crawl_script, url, "headless", proxy_host, proxy_port, userAgent, waitingTime], { shell: true, cwd: script_path, stdio: "pipe", detached: true  });
             } else {
-                ls = spawn("conda run -n openwpm --no-capture-output python -u", [crawl_script, url, "native", proxy_host, proxy_port, userAgent, waitingTime], { shell: true, cwd: script_path, stdio: "pipe" });
+                ls = spawn("conda run -n openwpm --no-capture-output python -u", [crawl_script, url, "native", proxy_host, proxy_port, userAgent, waitingTime], { shell: true, cwd: script_path, stdio: "pipe", detached: true });
             }
             console.log("spawned .py childprocess");
 
@@ -70,8 +70,10 @@ module.exports =
     },
     killCrawler: function () { 
         isCancelled = true;
-        ls.kill("SIGINT");
+        //ls.kill('SIGINT');
+        process.kill(-ls.pid);
         console.log("Child process killed.");
+        
     },
 
     spawnProxy: function (proxy_host, proxy_port, har_destination, script_location) {

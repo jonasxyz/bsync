@@ -68,12 +68,12 @@ module.exports =
         return module;
 
     },
+    
     killCrawler: function () { 
         isCancelled = true;
-        //ls.kill('SIGINT');
-        process.kill(-ls.pid);
+        if (fileformat === ".js" && ls != undefined) ls.kill("SIGINT");
+        if (fileformat === ".py" && ls != undefined) process.kill(-ls.pid);
         console.log("Child process killed.");
-        
     },
 
     spawnProxy: function (proxy_host, proxy_port, har_destination, script_location) {

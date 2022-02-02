@@ -8,7 +8,7 @@ var spawnedScripts = require("./functions/spawnScripts.js");
 const client_name = "puppeteer"
 const headless = true;
 
-const crawl_script = "startPuppeteer.js" // e.g. "puppeteer.js"
+const crawl_script = "puppeteer_synced.js" // e.g. "puppeteer.js"
 const script_path = "./"
 const master_addr = "http://192.168.178.73:3000" // e.g. "http://localhost:3000"
 
@@ -74,11 +74,16 @@ socket.on("ping", function(){
 
 socket.on("url", data => {
 
-  if (data.toString() === "test") {
+  if (data.toString() === "calibration") {
     spawnedScripts.spawnCrawler(crawl_script, master_addr, client_name, script_path, headless, disable_proxy, proxy_host, proxy_port, client_name, 0); //hier war socket.id
-
     console.log("starting calibration");
-  } else {
+
+  }else if (data.toString() === "test") {
+
+    spawnedScripts.spawnCrawler(crawl_script, master_addr, client_name, script_path, headless, disable_proxy, proxy_host, proxy_port, client_name, waitingTime); //hier war socket.id
+    console.log("starting test run");
+
+  }else {
 
     if (!/^(?:f|ht)tps?\:\/\//.test(data)) {
       url = "http://" + data;
@@ -86,29 +91,25 @@ socket.on("url", data => {
       url = data;
     }
 
-    
+    if (disable_proxy==false){
+      spawnedScripts.spawnProxy(proxy_host, proxy_port, har_destination);
+    } 
     
 
     spawnedScripts.spawnCrawler(crawl_script, url, client_name, script_path, headless, disable_proxy, proxy_host, proxy_port, "False", waitingTime);
-    //console.log(spawnedScripts.mycrawler)
-  } //https://stackoverflow.com/questions/57108371/exporting-multiple-functions-with-arguments
 
-  if (disable_proxy==false){
-    spawnedScripts.spawnProxy(proxy_host, proxy_port, har_destination, proxy_script_location);
-  } 
-
+  }
 })
 
 socket.on("killchildprocess", data => {
 
-  if(data.toString() === "timeout") {
-    console.log("Browser timed out\nKilling child process...");
-  }else{
-    console.log("Crawl cancelled at master\nKilling child process...");
+  if(data.toString() === "timeout"){
+    console.log("Browser timed out");
 
-  }
-  //if(spawnedScripts.mycrawler !== undefined) {
-    //spawnedScripts.mycrawler.kill("SIGINT");
+  }else{
+    console.log("Crawl cancelled at master");
+
+  }   
   spawnedScripts.killCrawler();
 
 });

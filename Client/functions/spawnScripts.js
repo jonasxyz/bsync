@@ -2,20 +2,19 @@ const {spawn} = require('child_process');
 const path = require('path');
 
 var tempUrl;
-var isCancelled = false;
+var childExists = false;
 
 module.exports =
 {
     spawnCrawler: function (crawl_script, url, client_name, script_path, headless, disable_proxy, proxy_host, proxy_port, userAgent, waitingTime) {
 
-        isCancelled = false;
         tempUrl = url;
         fileformat = path.extname(crawl_script);
 
         if (fileformat === ".js") {
             ls = spawn('node', [crawl_script, url, headless, proxy_host, proxy_port, userAgent, waitingTime], { cwd: script_path, stdio: "pipe", detached: true  });
             console.log("spawned .js childprocess");
-            //console.log(sId);
+            childExists = true;
 
 
 
@@ -26,6 +25,8 @@ module.exports =
                 ls = spawn("conda run -n openwpm --no-capture-output python -u", [crawl_script, url, "native", proxy_host, proxy_port, userAgent, waitingTime], { shell: true, cwd: script_path, stdio: "pipe", detached: true });
             }
             console.log("spawned .py childprocess");
+            childExists = true;
+
 
         } else {
             console.error("Fileformat not supported.");
@@ -41,7 +42,13 @@ module.exports =
                 socket.emit("browserready", client_name);
                 console.log("Browser ready for visiting URL");
 
-            } else console.log("stdout: " + data);
+            }if (data.toString().includes("urldone")) { 
+
+                socket.emit("urldone");
+                console.log("URL done");
+     
+
+            }else console.log("stdout: " + data);
         })
 
         ls.stderr.on("data", (err) => {
@@ -56,12 +63,8 @@ module.exports =
         ls.on("close", (data) => {
 
             if (disable_proxy == false) proxy.kill("SIGINT");
-            if (isCancelled == false){
-                console.log("URL done");
-                socket.emit("urldone");
-            } 
             console.log("Child process closed.");
-
+            childExists = false;
 
         })
 
@@ -70,10 +73,15 @@ module.exports =
     },
     
     killCrawler: function () { 
-        isCancelled = true;
-        if (fileformat === ".js" && ls != undefined) ls.kill("SIGINT");
-        if (fileformat === ".py" && ls != undefined) process.kill(-ls.pid);
-        console.log("Child process killed.");
+        
+        if(childExists){
+            if (fileformat === ".js") ls.kill("SIGINT");
+            if (fileformat === ".py") process.kill(-ls.pid);
+
+            childExists = false;
+            console.log("Child process killed.");
+        } 
+        
     },
 
     spawnProxy: function (proxy_host, proxy_port, har_destination, script_location) {

@@ -74,6 +74,9 @@ socket.on("ping", function(){
 
 socket.on("url", data => {
 
+  if (disable_proxy==false){
+    spawnedScripts.spawnProxy(proxy_host, proxy_port, har_destination, proxy_script_location, data);
+  } 
   if (data.toString() === "calibration") {
     spawnedScripts.spawnCrawler(crawl_script, master_addr, client_name, script_path, headless, disable_proxy, proxy_host, proxy_port, client_name, 0); //hier war socket.id
     console.log("starting calibration");
@@ -89,16 +92,12 @@ socket.on("url", data => {
       url = "http://" + data;
     } else {
       url = data;
-    }
-
-    if (disable_proxy==false){
-      spawnedScripts.spawnProxy(proxy_host, proxy_port, har_destination);
-    } 
-    
+    }  
 
     spawnedScripts.spawnCrawler(crawl_script, url, client_name, script_path, headless, disable_proxy, proxy_host, proxy_port, "False", waitingTime);
 
-  }
+  } 
+
 })
 
 socket.on("killchildprocess", data => {

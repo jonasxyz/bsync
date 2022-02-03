@@ -108,4 +108,5 @@ with TaskManager(
                 # Run commands across all browsers (simple parallelization)
                 manager.execute_command_sequence(command_sequence)
                 #manager.close(post_process)=False #my
+                sys.stdout.write("browserready")
                 break

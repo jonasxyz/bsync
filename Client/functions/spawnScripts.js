@@ -86,8 +86,12 @@ module.exports =
 
     spawnProxy: function (proxy_host, proxy_port, har_destination, script_location) {
 
-        let urlSaveName = "/" + tempUrl.replace(/^https?\:\/\//i, "");
-        proxy = spawn("mitmdump", ["--listen-host=" + proxy_host, "--listen-port=" + proxy_port, "--set=hardump=" + har_destination + urlSaveName, "-s /"+script_location+"/har_dump.py"]);
+        let urlSaveName = tempUrl.replace(/^https?\:\/\//i, "")+ ".har";
+        console.log(urlSaveName)
+        proxy = spawn("mitmdump", ["--listen-host=" + proxy_host, "--listen-port=" + proxy_port, "--set=hardump=" + har_destination + urlSaveName, "-s "+script_location+"/har_dump.py"]);
+
+        // mitmdump --listen-host=localhost --listen-port=3031 --set=hardump=./url.har -s ./har_dump.py
+        //proxy = spawn ("mitmdump", ["--listen-host="+host, "--listen-port="+port, "--set=hardump="+har_destination, "-s har_dump.py"]);
 
         console.log("proxy spawned")
         proxy.stderr.on("data", (err) => {

@@ -17,7 +17,7 @@ var waitingTime = Math.floor(process.argv.slice(7,8));;
     const browser = await puppeteer.launch({
         headless: headless,
         ignoreHTTPSErrors: true,
-        args:["--proxy-server:"+host+":"+port] 
+        args:["--proxy-server="+host+":"+port] 
     });
 
     const page = await browser.newPage();

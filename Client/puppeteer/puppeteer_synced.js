@@ -7,18 +7,25 @@ var port = process.argv.slice(5,6);
 var userAgent = process.argv.slice(6,7).toString();;
 var waitingTime = Math.floor(process.argv.slice(7,8));;
 
+var proxyArg;
 
 (async () => {
+    
+    if (host.toString() !== "False" ){
+        proxyArg = "--proxy-server="+host+":"+port.toString();
+        console.log("proxy set to "+host+":"+port );
+    }else  proxyArg = "";
 
     if (process.argv.slice(3,4).toString() === 'true' ){
         var headless = true;
     } else var headless = false;
-    
+
     const browser = await puppeteer.launch({
         headless: headless,
         ignoreHTTPSErrors: true,
-        args:["--proxy-server="+host+":"+port] 
+        args:[proxyArg] 
     });
+ 
 
     const page = await browser.newPage();
 

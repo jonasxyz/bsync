@@ -10,6 +10,8 @@ module.exports =
 
         tempUrl = url;
         fileformat = path.extname(crawl_script);
+        if(disable_proxy==true) proxy_host = "False"; 
+
 
         if (fileformat === ".js") {
             ls = spawn('node', [crawl_script, url, headless, proxy_host, proxy_port, userAgent, waitingTime], { cwd: script_path, stdio: "pipe", detached: true  });

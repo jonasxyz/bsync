@@ -1,23 +1,24 @@
 const io = require("socket.io-client")
 
 const path = require('path');
-const {spawn} = require('child_process');
 var spawnedScripts = require("./functions/spawnScripts.js");
 
 /********************************************************************************************************************************/
-const client_name = "puppeteer"
-const headless = true;
+const client_name = "StealthyWPM"
+const headless = false;
 
-const crawl_script = "puppeteer_synced.js" // e.g. "puppeteer.js"
-const script_path = "./"
+const crawl_script = "openwpm_synced.py" // e.g. "puppeteer.js"
+const script_path = "/home/user/Schreibtisch/client/StealthyWPM/"
+//const script_path = "/home/user/Schreibtisch/client/OpenWPM/"
+
 const master_addr = "http://192.168.178.73:3000" // e.g. "http://localhost:3000"
 
 const disable_proxy = false; // set true to disable mitmproxy
-const har_destination = "/home/user/Schreibtisch/client/poc6plus/http/" // e.g. "/home/user/"
+const har_destination = "/home/user/Schreibtisch/client/http_v2/" // e.g. "/home/user/http/"
 
-const proxy_host = "localhost";
+const proxy_host = "127.0.0.1";
 const proxy_port = "3031";
-const proxy_script_location ="/home/user/Schreibtisch/client/poc6plus/functions"
+const proxy_script_location ="/home/user/Schreibtisch/client/"
 /*******************************************************************************************************************************/
 
 var waitingTime = 0;

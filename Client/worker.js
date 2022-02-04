@@ -2,28 +2,13 @@ const io = require("socket.io-client")
 
 const path = require('path');
 var spawnedScripts = require("./functions/spawnScripts.js");
-
-/********************************************************************************************************************************/
-const client_name = "StealthyWPM"
-const headless = false;
-
-const crawl_script = "openwpm_synced.py" // e.g. "puppeteer.js"
-const script_path = "/home/user/Schreibtisch/client/StealthyWPM/"
-//const script_path = "/home/user/Schreibtisch/client/OpenWPM/"
-
-const master_addr = "http://192.168.178.73:3000" // e.g. "http://localhost:3000"
-
-const disable_proxy = false; // set true to disable mitmproxy
-const har_destination = "/home/user/Schreibtisch/client/http_v2/" // e.g. "/home/user/http/"
-
-const proxy_host = "127.0.0.1";
-const proxy_port = "3031";
-const proxy_script_location ="/home/user/Schreibtisch/client/"
+var config = require("./config.js");
 /*******************************************************************************************************************************/
+
 
 var waitingTime = 0;
 
-socket = io(master_addr,{
+socket = io(config.master_addr,{
   "reconnection" : true,
   "reconnectionDelay" : 1000,
   "timeout" : 5000
@@ -35,7 +20,7 @@ console.log("client trying to connect to master server...");
 
 socket.on("connect", data => {
   console.log("Client " + socket.id+" succesfully connected");
-  socket.emit("initialization", client_name);
+  socket.emit("initialization", config.client_name);
 
 });
 
@@ -69,22 +54,22 @@ socket.io.on("reconnect_attempt", (attempt)=>{
 
 socket.on("ping", function(){
   console.log("Testing latency to master server...");
-  socket.emit("pingresults", client_name);
+  socket.emit("pingresults", config.client_name);
 })
 
 
 socket.on("url", data => {
 
   if (disable_proxy==false){
-    spawnedScripts.spawnProxy(proxy_host, proxy_port, har_destination, proxy_script_location, data);
+    spawnedScripts.spawnProxy(config.proxy_host, config.proxy_port, config.har_destination, config.proxy_script_location, data);
   } 
   if (data.toString() === "calibration") {
-    spawnedScripts.spawnCrawler(crawl_script, master_addr, client_name, script_path, headless, disable_proxy, proxy_host, proxy_port, client_name, 0); //hier war socket.id
+    spawnedScripts.spawnCrawler(config.crawl_script, config.master_addr, config.client_name, config.script_path, config.headless, config.disable_proxy, config.proxy_host, config.proxy_port, config.client_name, 0); //hier war socket.id
     console.log("starting calibration");
 
   }else if (data.toString() === "test") {
 
-    spawnedScripts.spawnCrawler(crawl_script, master_addr, client_name, script_path, headless, disable_proxy, proxy_host, proxy_port, client_name, waitingTime); //hier war socket.id
+    spawnedScripts.spawnCrawler(config.crawl_script, config.master_addr, config.client_name, config.script_path, config.headless, config.disable_proxy, config.proxy_host, config.proxy_port, config.client_name, waitingTime); //hier war socket.id
     console.log("starting test run");
 
   }else {
@@ -95,7 +80,7 @@ socket.on("url", data => {
       url = data;
     }  
 
-    spawnedScripts.spawnCrawler(crawl_script, url, client_name, script_path, headless, disable_proxy, proxy_host, proxy_port, "False", waitingTime);
+    spawnedScripts.spawnCrawler(config.crawl_script, url, config.client_name, config.script_path, config.headless, config.disable_proxy, config.proxy_host, config.proxy_port, "False", waitingTime);
 
   } 
 

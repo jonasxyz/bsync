@@ -1,4 +1,4 @@
-const config = module.export = {
+const config = module.exports = {
 
 	client_name : "puppeteer", 						// must be unique
 	headless : false,

@@ -154,26 +154,26 @@ module.exports ={
 
         array.forEach(element => { 
             if (element.dateArray.length - 1 == iterations){ 
-                console.log(element.workerName + "dateArray -1 " +element.dateArray[iterations-1] );
+                // console.log(element.workerName + "dateArray -1 " +element.dateArray[iterations-1] );
                 element.dateArray.pop();
             } 
             if (element.readyArray.length - 1 == iterations){ 
-                console.log(element.workerName + "readyArray -1 " +element.readyArray[iterations-1] );
+                // console.log(element.workerName + "readyArray -1 " +element.readyArray[iterations-1] );
                 element.readyArray.pop();
             }
             if (calibrationDone) {
                 if (element.waitingTimeArray.length - 1 == iterations) {
-                    console.log(element.workerName + "waitingTimeArray -1 " + element.waitingTimeArray[iterations - 1]);
+                    // console.log(element.workerName + "waitingTimeArray -1 " + element.waitingTimeArray[iterations - 1]);
                     element.waitingTimeArray.pop();
                 }
             }
             
             if (element.requestArray.length - 1 == iterations){ 
-                console.log(element.workerName + "requestArray -1 " +element.requestArray[iterations-1] );
+                // console.log(element.workerName + "requestArray -1 " +element.requestArray[iterations-1] );
                 element.requestArray.pop();
             } 
             if (element.doneArray.length - 1 == iterations){ 
-                console.log(element.workerName + "doneArray -1 " +element.doneArray[iterations-1] );
+                // console.log(element.workerName + "doneArray -1 " +element.doneArray[iterations-1] );
                 element.doneArray.pop();
             } 
             
@@ -193,39 +193,4 @@ module.exports ={
 
     }
 
-//maxdelay waitingtime und done funktionieren nicht request funktioniert 
-
 }
-
-// function searchArray(myArray, myValue, myColumn) {
-
-//     for (var i = 0; i < myArray.length; i++) {
-
-//         if (myColumn == 1) {
-//             if (myArray[i].workerName === myValue) { // search for workerName
-
-//                 return i;
-//             }
-//         } else if (myColumn == 2) {
-//             if (myArray[i].socketId === myValue) { // search for socketId
-
-//                 return i;
-//             }
-//         }else if (myColumn == 3) {
-
-//             if (myArray[i].workerName === myValue) { // search for workerName return waitingTime
-
-//                 return myArray[i].waitMs;
-                
-//             }
-//         }
-        
-//         //todo fehlerabfrage wenn elemetn nicht gefunden
-//         else if (i === myArray.length - 1) {
-//             console.log("No match between names of clients!");
-//             //process.exit;
-//         }
-//     }
-// }
-
-

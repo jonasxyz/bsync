@@ -1,37 +1,19 @@
-const express = require('express')
-const app = express();
+var statFunctions = require('./functions/statFunctions.js');
+var logFunctions = require('./functions/logging.js');
+var helperFunctions = require('./functions/helper.js');
+var config = require('./config.js');
 
 var prompt = require('prompt');
 
 const fs = require('fs');
-const server = require("http").createServer(app);
-const io = require("socket.io")(server);
+
+const express = require('express');
+const app = express();
+var server = app.listen(config.port, () => console.log("Server listening on port " + config.port +"\n"));
+
+var io = require("socket.io")(server);
 
 
-var statFunctions = require('./functions/statFunctions.js');
-var logFunctions = require('./functions/logging.js');
-var helperFunctions = require('./functions/helper.js');
-
-/******************************************************************************************************************************/
-
-//npm i socket.io prompt express http
-// todo zähler variablen vereinfachen evtl zu einer zusammenfassen
-
-const num_clients = 4;                  // set number of clients you want to connect
-const ip = "http://192.168.178.73";     // insert master-server ip
-const port = 3000;                      // set master-server port (default 3000)
-const allowed_ping = 100;               // set allowed ping between clients and server
-const url_list = "tranco100.csv";       // insert name of the list containing the websites to crawl (.txt or .csv)
-const calibration_runs = 1;             // set number of runs measuring the http access time between browsers (default 10)
-const re_calibration = 100;             // repeat calibration afer number of websites crawled (default 100)
-
-const timeout_ms = 120000;              // set milliseconds after which the browser is restarted when the urldone signal is not received
-                                        // adjust that to the time browsers stay on the website e.g 4x
-
-const test_run = false;                 // testing the synchronisation
-const test_iterations = 1000;           // set number of test runs
-
-/******************************************************************************************************************************/
 
 // todo vielleicht estimatedRequest hinzufügen 
 // bester zeitpunkt ein signal schicken und dann ins normale array rein um etwas nachvollziehen zu können wann die request auf den websites eingehen
@@ -47,10 +29,10 @@ var pingOkay = 0;
 var testsDone = 0;
 var browsersReady = 0;
 var pendingJobs  = 0;
-
+var receivedRequests = 0; //hoftix
 // zwei gleiche crawler http informationen vergleichen
 
-var urlList= fs.readFileSync("./"+url_list).toString().split("\r\n"); // create array with one element out of each line
+var urlList= fs.readFileSync("./"+config.url_list).toString().split("\r\n"); // create array with one element out of each line
 
 var calibrationDone = false;
 var initCalibrationDone = false;
@@ -78,13 +60,13 @@ var doneTimeoutCounter;
 
 console.log('\nMaster server is starting...');
 
-if (test_run){
-    numIterations = test_iterations;
+if (config.test_run){
+    numIterations = config.test_iterations;
     console.log("Starting test run with " + numIterations +" Iterations");
 
 }else{
     numIterations = urlList.length;
-    console.log("Fetched "+ numIterations+" entries from "+ url_list);
+    console.log("Fetched "+ numIterations+" entries from "+ config.url_list);
 } 
 
 
@@ -94,15 +76,15 @@ if (test_run){
 
 io.on("connection", socket => {
 
-    if(activeClients>=num_clients){
-        console.log("\x1b[31mERROR: " + "Too many clients connected. Check num_clients argument."+ "\x1b[0m");
+    if(activeClients>=config.num_clients){
+        console.log("\x1b[31mERROR: " + "Too many clients connected. Check config.num_clients argument."+ "\x1b[0m");
         io.to(socket.id).emit("close", "toomanyclients");
     }
 
     
     activeClients+=1; // counter for connected clients
 
-    io.to(socket.id).emit("numclients", num_clients); // send number of connected workers to each client //todo unnötig entfernen
+    io.to(socket.id).emit("numclients", config.num_clients); // send number of connected workers to each client //todo unnötig entfernen
     io.emit("activeclients", activeClients);
     
     socket.on("initialization", (clientname)=>{
@@ -135,10 +117,10 @@ io.on("connection", socket => {
             arrayStatistics.push({ workerName: socket.data.clientname, socketId: socket.id, dateArray: [], readyArray: [], waitingTimeArray: [], requestArray: [], doneArray: [], maxDelayArray: [] });
 
         }
-        console.log("INFO: " + "Client "+clientname + " connected. "+ activeClients+ "/" + num_clients+" clients connected to start crawl");
+        console.log("INFO: " + "Client "+clientname + " connected. "+ activeClients+ "/" + config.num_clients+" clients connected to start crawl");
 
  
-        if(activeClients==num_clients && ongoingCrawl==false){                   
+        if(activeClients==config.num_clients && ongoingCrawl==false){                   
 
             console.log("\x1b[33mSTATUS: \x1b[0m" + "All clients connected. Starting latency test...\n");
             pingTime = Date.now();
@@ -146,7 +128,7 @@ io.on("connection", socket => {
         }
     
  
-        if (ongoingCrawl == true && activeClients == num_clients) {
+        if (ongoingCrawl == true && activeClients == config.num_clients) {
 
             console.log("\x1b[33mSTATUS: \x1b[0m" + "Reconnection worked.\nRestarting with calibration then continuing the crawl with the last URL...", "\x1b[0m");
             browsersReady = 0;
@@ -189,7 +171,7 @@ io.on("connection", socket => {
         io.emit("activeclients", activeClients);
 
 
-        if(ongoingCrawl==true && activeClients<num_clients){
+        if(ongoingCrawl==true && activeClients<config.num_clients){
 
             console.log("\x1b[31mERROR: " + "Client "+ socket.data.clientname + " disconnected while crawling...\nClient will automatically  try to reconnect.","\x1b[0m");
 
@@ -202,7 +184,7 @@ io.on("connection", socket => {
 
         }else{
 
-            console.log("\x1b[33mSTATUS: \x1b[0m" + "\nClient "+ socket.data.clientname + " disconnected. "+ activeClients + "/" + num_clients+" clients connected to start crawl\n");
+            console.log("\x1b[33mSTATUS: \x1b[0m" + "\nClient "+ socket.data.clientname + " disconnected. "+ activeClients + "/" + config.num_clients+" clients connected to start crawl\n");
         }
     })
     
@@ -213,7 +195,7 @@ io.on("connection", socket => {
         console.log("INFO: " + "Client "+data +" latency to master server " +latency + " ms");
         logFunctions.logPing(data, new Date().toISOString(), latency);
 
-        if(latency<allowed_ping){
+        if(latency<config.allowed_ping){
             pingOkay+=1;
             
         }else{
@@ -222,7 +204,7 @@ io.on("connection", socket => {
             process.exit();
         }
 
-        if(pingOkay==num_clients){
+        if(pingOkay==config.num_clients){
 
             isAnswered=false;
             interfaceQuestion("calibration"); //ask to start calibration
@@ -236,9 +218,10 @@ io.on("connection", socket => {
 
     socket.on("urldone", async (data) => {
 
-        if (activeClients == num_clients && ongoingCrawl == true) {
+        if (activeClients == config.num_clients && ongoingCrawl == true) {
 
             pendingJobs -= 1;
+            //console.log(pendingJobs) //debug
             let dateUrlDone = Date.now();
 
             let statArrayPosition = helperFunctions.searchArray(arrayStatistics, socket.data.clientname.toString(), 1);;
@@ -255,7 +238,7 @@ io.on("connection", socket => {
                 arrayStatistics[statArrayPosition].waitingTimeArray.push(tempWaitingTime);
 
                 // insert time browser is done with the url
-                if(!test_run) arrayStatistics[statArrayPosition].dateArray.push(new Date(dateUrlDone).toISOString());
+                if(!config.test_run) arrayStatistics[statArrayPosition].dateArray.push(new Date(dateUrlDone).toISOString());
 
                 console.log("\x1b[34mCRAWLED:\x1b[0m", arrayClients[calibrationArrayPosition].workerName , "crawled URL", tempUrl , "finished\x1b[34m",
                 (dateUrlDone - timeUrlSent) , "ms\x1b[0m after distribtung URL");
@@ -292,6 +275,8 @@ io.on("connection", socket => {
                 logFunctions.logCalibration(arrayClients, testsDone);
 
                 testsDone += 1;
+                receivedRequests = 0;
+
                 console.table(arrayClients);
                 helperFunctions.checkArrayLengths(arrayClients, testsDone, false);
 
@@ -301,12 +286,15 @@ io.on("connection", socket => {
 
 
 
-                if (testsDone == calibration_runs) { // calibration iterations done
+                if (testsDone == config.calibration_runs ) { // calibration iterations done
 
-                    
-                    calibration();
+           
 
                     calibrationDone = true;
+                    await sleep(4000);
+
+                    calibration();
+
                     
                     if (initCalibrationDone == false) { 
 
@@ -317,10 +305,10 @@ io.on("connection", socket => {
                             // Math.round( acessDelay.reduce((a, b) => (a + b)) / acessDelay.length )
                             (arrayClients[arrayClients.length - 1].avgDelay - arrayClients[0].avgDelay) + " ms", "\x1b[0m");
 
-                        // let estimatedCrawlTime = ((urlList.length/calibration_runs) * (Date.now() - calibrationTime)) + ((urlList.length / re_calibration) * calibrationTookMs);
+                        // let estimatedCrawlTime = ((urlList.length/config.calibration_runs) * (Date.now() - calibrationTime)) + ((urlList.length / config.re_calibration) * calibrationTookMs);
                         // console.log("Estimated time to crawl "+ urlList.length + " websites is "+ estimatedCrawlTime+ "ms " + msToTime(estimatedCrawlTime)+ " hours.");
                         // changed
-                        let estimatedCrawlTime = ((numIterations / calibration_runs) * calibrationTookMs) + ((numIterations / re_calibration) * calibrationTookMs);
+                        let estimatedCrawlTime = ((numIterations / config.calibration_runs) * calibrationTookMs) + ((numIterations / config.re_calibration) * calibrationTookMs);
                         console.log("INFO: " + "Estimated time to crawl " + numIterations + " websites is " + estimatedCrawlTime + "ms " + helperFunctions.msToHours(estimatedCrawlTime) + " hours.");
                         
   
@@ -332,7 +320,7 @@ io.on("connection", socket => {
                         // interfaceQuestion("crawl");
                         //sendUrl(false); changed
 
-                        // if (test_run) sendUrl(false); // changed umwandlung
+                        // if (config.test_run) sendUrl(false); // changed umwandlung
                         // else sendUrl(false); 
                     }
                     // else{
@@ -364,11 +352,11 @@ io.on("connection", socket => {
                 
                 
                 //helperFunctions.checkArrayLengths(arrayStatistics, urlsDone, true); //debug
-                console.table(arrayStatistics);
+                // console.table(arrayStatistics);
 
 
 
-                if(test_run) {
+                if(config.test_run) {
 
                     statFunctions.insertMaxDelay(arrayStatistics, statFunctions.getMaxDelay(arrayStatistics, urlsDone-1), urlsDone-1);
 
@@ -388,7 +376,7 @@ io.on("connection", socket => {
                     io.sockets.emit("close", "finished");
                     process.exit();
 
-                } else if (urlsDone % re_calibration == 0) { // recalibrate after number of website crawled 
+                } else if (urlsDone % config.re_calibration == 0) { // recalibrate after number of website crawled 
 
                     console.log("\x1b[33mSTATUS: \x1b[0m" + "\x1b[32m", "Starting recalibration...", "\x1b[0m")
                     calibrationDone = false;
@@ -414,14 +402,14 @@ io.on("connection", socket => {
 
         //beim disconnect wo die ganze calibration nochmal gemacht wird ist die liste natürlich schon voll
 
-        if (activeClients == num_clients && ongoingCrawl == true ) {
+        if (activeClients == config.num_clients && ongoingCrawl == true ) {
 
             let tempName = socket.data.clientname.toString();
            
             timeBrowserReady =  (Date.now() - timeUrlSent);
 
             if (browsersReady == 0) fastestReady = timeBrowserReady;
-            if (browsersReady == num_clients-1) slowestReady = timeBrowserReady;
+            if (browsersReady == config.num_clients-1) slowestReady = timeBrowserReady;
 
 
             //changed + browserready für clientarray //search arrays for right worker and push time it took for browser to start in the array
@@ -436,13 +424,13 @@ io.on("connection", socket => {
 
                     //changed added readycheck
                     browsersReady += 1;
-                    console.log("\x1b[33mSTATUS: \x1b[0m" + browsersReady + "/" + num_clients + " " + data + "'s browser ready");
+                    console.log("\x1b[33mSTATUS: \x1b[0m" + browsersReady + "/" + config.num_clients + " " + data + "'s browser ready");
 
                 }else{
                     arrayStatistics[arrayPosition].readyArray[urlsDone] = timeBrowserReady;
                     console.log("overwriting ready status"); //debug
                     //changed added readycheck
-                    console.log("\x1b[33mSTATUS: \x1b[0m" + browsersReady + "/" + num_clients + " " + data + "'s browser ready");
+                    console.log("\x1b[33mSTATUS: \x1b[0m" + browsersReady + "/" + config.num_clients + " " + data + "'s browser ready");
 
                 }
                 
@@ -456,19 +444,19 @@ io.on("connection", socket => {
                     arrayClients[arrayPosition].readyArray.push(timeBrowserReady);
 
                     browsersReady += 1;
-                    console.log("\x1b[33mSTATUS: \x1b[0m" + browsersReady + "/" + num_clients + " " + data + "'s browser ready");
+                    console.log("\x1b[33mSTATUS: \x1b[0m" + browsersReady + "/" + config.num_clients + " " + data + "'s browser ready");
 
                 }else{
                     arrayClients[arrayPosition].readyArray[testsDone] = timeBrowserReady;
                     console.log("overwriting ready status"); //debug
 
-                    console.log("\x1b[33mSTATUS: \x1b[0m" + browsersReady + "/" + num_clients + " " + data + "'s browser ready");
+                    console.log("\x1b[33mSTATUS: \x1b[0m" + browsersReady + "/" + config.num_clients + " " + data + "'s browser ready");
                 }
 
             }
         
 
-            if (browsersReady == num_clients) { // if all workers signalized that their browser is ready
+            if (browsersReady == config.num_clients) { // if all workers signalized that their browser is ready
 
                 timeAllBrowsersReady = Date.now();
 
@@ -480,7 +468,7 @@ io.on("connection", socket => {
 
                 io.emit("browsergo"); // distribute signal to access the url after all browser are ready
 
-                browserDoneCountdown = setTimeout(browserDoneTimeout, timeout_ms );
+                browserDoneCountdown = setTimeout(browserDoneTimeout, config.timeout_ms );
                 browsersReady = 0;
             }
         }
@@ -505,7 +493,7 @@ io.on("connection", socket => {
            
         }else{
 
-            if(test_run) tempUrl =  "test";
+            if(config.test_run) tempUrl =  "test";
             //else tempUrl = urlList[urlsDone].toString().split(',').pop();
             else {
                 preTempUrl = urlList[urlsDone].toString();
@@ -518,7 +506,7 @@ io.on("connection", socket => {
         io.sockets.emit("url", tempUrl);
         timeUrlSent = Date.now();
 
-        pendingJobs+=num_clients;
+        pendingJobs+=config.num_clients;
 
         if(calibrationDone) console.log("\x1b[33mSTATUS: \x1b[0m" + "URL#"+ (urlsDone+1) + " sent " + tempUrl);
         else console.log("\x1b[33mSTATUS: \x1b[0m" + "calibration#" + (testsDone+1) + " sent to all workers"); 
@@ -577,13 +565,14 @@ io.on("connection", socket => {
 
             urlsDone += 1;
             doneTimeoutCounter = 0;
-            sendUrl(false);
             console.log("\x1b[33mSTATUS: \x1b[0m" + "Skipping url#" + urlsDone + " " + tempUrl + " after trying to crawl 3 times.");
             logFunctions.skipUrl(tempUrl.toString(), urlsDone, new Date().toISOString());
 
+            sendUrl(false);
+
         }
     
-        if (calibrationDone == true && activeClients == num_clients) {
+        if (calibrationDone == true && activeClients == config.num_clients) {
     
             arrayStatistics.forEach(element => {
     
@@ -607,7 +596,7 @@ io.on("connection", socket => {
     
             sendUrl(false);
     
-        }else if(activeClients == num_clients){
+        }else if(activeClients == config.num_clients){
             arrayClients.forEach(element => {
 
                 if(element.doneArray.length-1 != testsDone){
@@ -646,12 +635,19 @@ io.on("connection", socket => {
 })
 
 
-async function sleep(Ms) {
-    //console.log("\x1b[33mSTATUS: \x1b[0m" + "Waiting "+ (Ms/60000) +" minutes for client automatic reconnecting....");
-    await new Promise(resolve => setTimeout(resolve, Ms));
+// async function sleep(Ms) {
+//     //console.log("\x1b[33mSTATUS: \x1b[0m" + "Waiting "+ (Ms/60000) +" minutes for client automatic reconnecting....");
+//     console.log("waiting")
+//     await new Promise(resolve => setTimeout(resolve, Ms));
     
-}
+// }
+function sleep(ms) {
+    console.log("waiting")
 
+    return new Promise((resolve) => {
+      setTimeout(resolve, ms);
+    });
+  }
 // async function sleep(ms) {
 //     return new Promise((resolve) => {
 //       setTimeout(resolve, ms);
@@ -664,7 +660,7 @@ function browserReadyTimeout(){ // timeout if the browser ready signal ist not r
 
     let tempId;
     let tempName;
-    if(calibrationDone==true && activeClients == num_clients){
+    if(calibrationDone==true && activeClients == config.num_clients){
 
         arrayStatistics.forEach(element => { // search arrays for element who lacks the signal that the browser is ready
 
@@ -674,7 +670,7 @@ function browserReadyTimeout(){ // timeout if the browser ready signal ist not r
       
             }
         });
-    }else if(activeClients == num_clients){
+    }else if(activeClients == config.num_clients){
 
         arrayClients.forEach(element => {
             //console.log(element.readyArray.length +" kleiner" + testsDone)
@@ -698,7 +694,7 @@ function browserReadyTimeout(){ // timeout if the browser ready signal ist not r
         //await sleep(30000);
         browserReadyCountdown = setTimeout(browserReadyTimeout, 120000); // restart the timeout
 
-        if (test_run) io.to(tempId).emit("url", "test");
+        if (config.test_run) io.to(tempId).emit("url", "test");
         else io.to(tempId).emit("url", tempUrl);
 
         console.log("\x1b[33mSTATUS: \x1b[0m" + "Resending URL " + tempUrl + " to " + tempName);
@@ -708,8 +704,7 @@ function browserReadyTimeout(){ // timeout if the browser ready signal ist not r
 }
 
 
-function calibration(){
-
+async function calibration(){
     // calculate average time gathered from the calibibration between sending url to receiving the http request
     for (var i = 0; i < arrayClients.length; i++) {
 
@@ -741,7 +736,9 @@ function calibration(){
 
 app.get('/', function (req, res) {
 
-    if (activeClients == num_clients && ongoingCrawl == true) {
+    if (activeClients == config.num_clients && ongoingCrawl == true) {
+
+        receivedRequests +=1; //todo 
 
         let accessTime = Date.now(); 
         accesDate = new Date(accessTime).toISOString();
@@ -760,7 +757,7 @@ app.get('/', function (req, res) {
             tempName = arrayClients[arrayPosition].workerName;
         } 
 
-        if(calibrationDone == true && test_run == true){
+        if(calibrationDone == true && config.test_run == true){
 
             let arrayPosition = helperFunctions.searchArray(arrayStatistics, tempUserAgent.toString(), 4);
 
@@ -781,4 +778,3 @@ app.get('/', function (req, res) {
 
 }); 
 
-server.listen(port, () => console.log("Server listening on port " + port +"\n"));

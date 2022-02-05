@@ -6,7 +6,7 @@ const config = module.exports = {
 	crawl_script : "puppeteer_synced.py", 
 	script_path : "/home/user/Schreibtisch/bsync/Client/puppeteer",
 
-	master_addr : "http://192.168.178.73:3000", 				// e.g. "http://localhost:3000"
+	master_addr : "http://192.168.178.42:3000", 				// e.g. "http://localhost:3000"
 
 	disable_proxy : true, 							// set true to disable mitmproxy
 	har_destination : "/home/user/Schreibtisch/client/http_v2/",      	// e.g. "/home/user/http/"

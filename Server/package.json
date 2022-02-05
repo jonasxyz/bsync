@@ -1,0 +1,24 @@
+{
+  "name": "bsync-server",
+  "version": "1.0.0",
+  "description": "",
+  "main": "scheduler.js",
+  "scripts": {
+    "test": "node scheduler.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jonasxyz/bsync.git"
+  },
+  "author": "jonasxyz",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/jonasxyz/bsync/issues"
+  },
+  "homepage": "https://github.com/jonasxyz/bsync#readme",
+  "dependencies": {
+    "express": "^4.17.2",
+    "prompt": "^1.2.1",
+    "socket.io": "^4.4.1"
+  }
+}

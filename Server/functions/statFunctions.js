@@ -1,4 +1,3 @@
-var simples = require('simple-statistics')
 
 var helperFunctions = require('./helper.js');
 
@@ -24,35 +23,6 @@ module.exports ={
         console.log("INFO: " + "Highest delay is " + highestDelay + " ms. " + countRequestDelayOver1000 + " iterations with delay over 1 second");
 
          
-    },
-    
-    calcStatistics : function (arrayStatistics, urlsDone) {
-
-        if (urlsDone > 2) {
-            for (let i = 0; i < arrayStatistics.length; ++i) {
-                console.log("Durchschnitt ReadyArray", arrayStatistics[i].workerName, " : ", simples.mean(arrayStatistics[i].readyArray));
-                console.log("Durchschnitt ReqArray", arrayStatistics[i].workerName, " : ", simples.mean(arrayStatistics[i].requestArray));
-                console.log("Durchschnitt DoneArray", arrayStatistics[i].workerName, " : ", simples.mean(arrayStatistics[i].doneArray));
-    
-                try {
-                    let stdD = simples.standardDeviation(arrayStatistics[i].maxDelayArray);
-                    console.log("Standardabweichung maxDelay", arrayStatistics[i].workerName, " : ", stdD, " Avg ", simples.mean(arrayStatistics[i].maxDelayArray), " Max ", simples.max(arrayStatistics[i].maxDelayArray));
-                 }
-                 catch (e) {
-                    console.log("variance requires at least one data point");
-                 }
-                
-    
-                
-                //let maxD = simples.max(arrayStatistics[i].maxDelayArray);
-                //console.log("Maximum maxDelay", arrayStatistics[i].statName , " : ", maxD);
-    
-    
-                let stdReady = simples.standardDeviation(arrayStatistics[i].readyArray);
-                console.log("Standardabweichung ReadyArray", arrayStatistics[i].workerName, " : ", stdReady);
-            }
-        }
-    
     },
 
     insertTime: function (arrayStatistics, arrayClients, clientname, timeUrlSent, urlsDone) {

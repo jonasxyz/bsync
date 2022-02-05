@@ -19,7 +19,6 @@ module.exports =
             childExists = true;
 
 
-
         } else if (fileformat === ".py") {
             if (headless == true) {
                 ls = spawn("conda run -n openwpm --no-capture-output python -u", [crawl_script, url, "headless", proxy_host, proxy_port, userAgent, waitingTime], { shell: true, cwd: script_path, stdio: "pipe", detached: true  });

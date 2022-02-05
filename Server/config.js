@@ -2,7 +2,7 @@ const config = module.exports = {
 
     num_clients : 1,                  // set number of clients you want to connect
     ip : "http://192.168.178.73",    // insert master-server ip
-    port : 8081,                      // set master-server port (default 3000)
+    port : 3000,                      // set master-server port (default 3000)
     allowed_ping : 100,               // set allowed ping between clients and server
     url_list : "tranco100.csv",       // insert name of the list containing the websites to crawl (.txt or .csv)
     calibration_runs : 0,             // set number of runs measuring the http access time between browsers (default 10)

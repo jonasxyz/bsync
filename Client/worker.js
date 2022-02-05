@@ -1,9 +1,6 @@
 const io = require("socket.io-client")
-
-const path = require('path');
 var spawnedScripts = require("./functions/spawnScripts.js");
 var config = require("./config.js");
-/*******************************************************************************************************************************/
 
 
 var waitingTime = 0;

@@ -1,6 +1,6 @@
 const config = module.exports = {
 
-    num_clients : 1,                  // set number of clients you want to connect
+    num_clients : 4,                  // set number of clients you want to connect
     ip : "http://192.168.178.73",    // insert master-server ip
     port : 3000,                      // set master-server port (default 3000)
     allowed_ping : 100,               // set allowed ping between clients and server

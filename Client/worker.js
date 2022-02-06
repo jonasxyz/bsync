@@ -57,7 +57,7 @@ socket.on("ping", function(){
 
 socket.on("url", data => {
 
-  if (disable_proxy==false){
+  if (config.disable_proxy==false){
     spawnedScripts.spawnProxy(config.proxy_host, config.proxy_port, config.har_destination, config.proxy_script_location, data);
   } 
   if (data.toString() === "calibration") {

@@ -133,3 +133,6 @@ dist
 # logs and urlList
 
 *.csv
+
+# client settings
+./Client/config.js

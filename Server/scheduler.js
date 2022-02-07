@@ -69,6 +69,7 @@ if (config.test_run){
     console.log("Fetched "+ numIterations+" entries from "+ config.url_list);
 } 
 
+// if(config.calibration_runs < 1) calibrationDone = initCalibrationDone = true; unnötig 
 
 //events erklärt  https://socket.io/docs/v4/emitting-events/
 
@@ -207,7 +208,9 @@ io.on("connection", socket => {
         if(pingOkay==config.num_clients){
 
             isAnswered=false;
-            interfaceQuestion("calibration"); //ask to start calibration
+
+            if(config.calibration_runs == 0) interfaceQuestion("crawl");
+            else interfaceQuestion("calibration"); 
         }
     })
     
@@ -280,16 +283,13 @@ io.on("connection", socket => {
                 console.table(arrayClients);
                 helperFunctions.checkArrayLengths(arrayClients, testsDone, false);
 
-                //helperFunctions.checkArrayLengths(arrayClients, testsDone, false);
+                //helperFunctions.checkArrayLengths(arrayClients, testsDone, false); //debug
 
                 console.log("\x1b[33mSTATUS: \x1b[0m" + "Calibration #" + testsDone + " Delay between first and last HTTP Request ", "\x1b[33m", + statFunctions.getMaxDelay(arrayClients, testsDone-1) + " ms" , "\x1b[0m");
 
 
-
                 if (testsDone == config.calibration_runs ) { // calibration iterations done
-
            
-
                     calibrationDone = true;
                     await sleep(4000);
 
@@ -356,7 +356,7 @@ io.on("connection", socket => {
 
 
 
-                if(config.test_run) {
+                if(config.test_run) { // calculate maximum delay in incoming http request for the testrun
 
                     statFunctions.insertMaxDelay(arrayStatistics, statFunctions.getMaxDelay(arrayStatistics, urlsDone-1), urlsDone-1);
 
@@ -468,7 +468,7 @@ io.on("connection", socket => {
 
                 io.emit("browsergo"); // distribute signal to access the url after all browser are ready
 
-                browserDoneCountdown = setTimeout(browserDoneTimeout, config.timeout_ms );
+                browserDoneCountdown = setTimeout(browserDoneTimeout, config.timeout_ms);
                 browsersReady = 0;
             }
         }
@@ -502,7 +502,6 @@ io.on("connection", socket => {
 
 
         }
-        timeToAccess = Date.now();
         io.sockets.emit("url", tempUrl);
         timeUrlSent = Date.now();
 
@@ -512,7 +511,7 @@ io.on("connection", socket => {
         else console.log("\x1b[33mSTATUS: \x1b[0m" + "calibration#" + (testsDone+1) + " sent to all workers"); 
 
         //changed added timeout
-        browserReadyCountdown = setTimeout(browserReadyTimeout, 120000 ) // countdown is started and gets resolved when all browser are ready
+        browserReadyCountdown = setTimeout(browserReadyTimeout, 120000 ) // countdown is started and gets resolved when all browser are ready // todo dynamic timeout - 3x from calibration
     }
 
     function interfaceQuestion(operation) {
@@ -540,10 +539,8 @@ io.on("connection", socket => {
             }
 
             if (c == 'y' || c == 'yes') {
-                if (operation == "calibration" && isAnswered==false){
-                    sendUrl(true);  // test accesstime to  master webserver
-
-                } 
+                if (operation == "calibration" && isAnswered==false) sendUrl(true); // start testing accesstime to  master webserver for calibration
+                      
                 if (operation == "crawl" && isAnswered==false) sendUrl(false);
                 isAnswered=true; // avoid bufferd interface questions when client loses connection while question is active
                 return;
@@ -556,20 +553,25 @@ io.on("connection", socket => {
 
     }
 
+    //todo der der austimet behält zombie child
     function browserDoneTimeout(){
 
         let tempId;
         let tempName;
 
-        if(doneTimeoutCounter == 1) { // if browsers timed out 3 times at the current website the URL will be skipped
+        if(doneTimeoutCounter == config.website_attempts) { // if browsers timed out 3 times at the current website the URL will be skipped
 
             urlsDone += 1;
             doneTimeoutCounter = 0;
-            console.log("\x1b[33mSTATUS: \x1b[0m" + "Skipping url#" + urlsDone + " " + tempUrl + " after trying to crawl 3 times.");
+            clearTimeout(browserDoneCountdown);
+
+            io.sockets.emit("killchildprocess", "timeout");
+
+            console.log("\x1b[33mSTATUS: \x1b[0m" + "Skipping url#" + urlsDone + " " + tempUrl + " after failing to crawl " + (config.website_attempts+1) + " times.");
             logFunctions.skipUrl(tempUrl.toString(), urlsDone, new Date().toISOString());
 
             sendUrl(false);
-
+            return;
         }
     
         if (calibrationDone == true && activeClients == config.num_clients) {
@@ -586,7 +588,7 @@ io.on("connection", socket => {
             statFunctions.removeExtraStats(arrayStatistics,urlsDone, true); // remove the statistics from current iteration from all other workers so that the iteration can be repeated
 
     
-            console.log("\x1b[31mERROR: " + "Client " + tempName + " browser timed out while visiting URL...\nTrying to kill timed out browser.", "\x1b[0m");
+            console.log("\x1b[31mERROR: " + "Client " + tempName + " browser timed out while visiting URL...\nKilling all browsers.", "\x1b[0m");
             //io.to(tempId).emit("killchildprocess", "timeout");
             io.sockets.emit("killchildprocess", "timeout");
 
@@ -635,12 +637,6 @@ io.on("connection", socket => {
 })
 
 
-// async function sleep(Ms) {
-//     //console.log("\x1b[33mSTATUS: \x1b[0m" + "Waiting "+ (Ms/60000) +" minutes for client automatic reconnecting....");
-//     console.log("waiting")
-//     await new Promise(resolve => setTimeout(resolve, Ms));
-    
-// }
 function sleep(ms) {
     console.log("waiting")
 
@@ -648,11 +644,6 @@ function sleep(ms) {
       setTimeout(resolve, ms);
     });
   }
-// async function sleep(ms) {
-//     return new Promise((resolve) => {
-//       setTimeout(resolve, ms);
-//     });
-// }
 
 function browserReadyTimeout(){ // timeout if the browser ready signal ist not received within the timelimit 
 
@@ -682,7 +673,7 @@ function browserReadyTimeout(){ // timeout if the browser ready signal ist not r
         });
     }
 
-    if (tempId != undefined) { // if timed out client could be identified
+    if (tempId != undefined) { // kill and restart timed out browser
 
         console.log("\x1b[31mERROR: " + "Client " + tempName + " browser timed out while starting...\nTrying to kill childprocess.", "\x1b[0m");
         logFunctions.logTimeoutStarting(tempName, new Date().toISOString(), tempUrl.toString());
@@ -738,8 +729,6 @@ app.get('/', function (req, res) {
 
     if (activeClients == config.num_clients && ongoingCrawl == true) {
 
-        receivedRequests +=1; //todo 
-
         let accessTime = Date.now(); 
         accesDate = new Date(accessTime).toISOString();
 
@@ -771,7 +760,7 @@ app.get('/', function (req, res) {
         console.log("\x1b[34mREQUEST:\x1b[0m HTTP Request from " + tempName + " \x1b[34m" + (accessTime - timeUrlSent) + "\x1b[0m ms after starting iteration. " + (timeAllBrowsersReady - accessTime) 
         +" ms after sending ready signal");
 
-        res.send('testing browser access time!');
+        res.send('measuring browser access time!');
 
     }    
     

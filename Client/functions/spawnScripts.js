@@ -76,7 +76,7 @@ module.exports =
     killCrawler: function () { 
         
         if(childExists){
-            if (fileformat === ".js") ls.kill("SIGINT");
+            if (fileformat === ".js") process.kill(-ls.pid); //ls.kill("SIGINT");
             if (fileformat === ".py") process.kill(-ls.pid);
 
             childExists = false;

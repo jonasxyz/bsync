@@ -63,10 +63,13 @@ console.log('\nMaster server is starting...');
 if (config.test_run){
     numIterations = config.test_iterations;
     console.log("Starting test run with " + numIterations +" Iterations");
+    logFunctions.startLogTesting(new Date().toISOString().split('T')[0]);
 
 }else{
     numIterations = urlList.length;
     console.log("Fetched "+ numIterations+" entries from "+ config.url_list);
+    logFunctions.startLog(urlList, new Date().toISOString().split('T')[0]);
+
 } 
 
 // if(config.calibration_runs < 1) calibrationDone = initCalibrationDone = true; unnötig 
@@ -241,10 +244,14 @@ io.on("connection", socket => {
                 arrayStatistics[statArrayPosition].waitingTimeArray.push(tempWaitingTime);
 
                 // insert time browser is done with the url
-                if(!config.test_run) arrayStatistics[statArrayPosition].dateArray.push(new Date(dateUrlDone).toISOString());
+                if(!config.test_run){
+                    arrayStatistics[statArrayPosition].dateArray.push(new Date(dateUrlDone).toISOString()); 
+                    
+                    console.log("\x1b[34mCRAWLED:\x1b[0m", arrayClients[calibrationArrayPosition].workerName , "crawled URL", tempUrl , "finished\x1b[34m",
+                    (dateUrlDone - timeUrlSent) , "ms\x1b[0m after distribtung URL");
+                } 
 
-                console.log("\x1b[34mCRAWLED:\x1b[0m", arrayClients[calibrationArrayPosition].workerName , "crawled URL", tempUrl , "finished\x1b[34m",
-                (dateUrlDone - timeUrlSent) , "ms\x1b[0m after distribtung URL");
+               
                               
 
             }else{ // everytime one browser is done in calibration                
@@ -598,6 +605,8 @@ io.on("connection", socket => {
     
             sendUrl(false);
     
+            logFunctions.logTimeout(tempName, new Date().toISOString(), doneTimeoutCounter, urlsDone);    
+
         }else if(activeClients == config.num_clients){
             arrayClients.forEach(element => {
 
@@ -622,9 +631,10 @@ io.on("connection", socket => {
     
             console.log("\x1b[33mSTATUS: \x1b[0m" + "Restarting calibration#" + testsDone);
             sendUrl(true);
+            logFunctions.logTimeout(tempName, new Date().toISOString(), doneTimeoutCounter, testsDone);    
+
         }
     
-        logFunctions.logTimeout(tempName, new Date().toISOString(), tempUrl.toString(), doneTimeoutCounter);    
     }
 
     process.on("SIGINT", function(){
@@ -676,7 +686,7 @@ function browserReadyTimeout(){ // timeout if the browser ready signal ist not r
     if (tempId != undefined) { // kill and restart timed out browser
 
         console.log("\x1b[31mERROR: " + "Client " + tempName + " browser timed out while starting...\nTrying to kill childprocess.", "\x1b[0m");
-        logFunctions.logTimeoutStarting(tempName, new Date().toISOString(), tempUrl.toString());
+        logFunctions.logTimeoutStarting(tempName, new Date().toISOString());
 
         io.to(tempId).emit("killchildprocess", "timeout"); //https://azimi.me/2014/12/31/kill-child_process-node-js.html
 

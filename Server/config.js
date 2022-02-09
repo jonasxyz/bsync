@@ -10,9 +10,9 @@ const config = module.exports = {
     
     timeout_ms : 60000,              // set milliseconds after which the browser is restarted when the urldone signal is not received
                                       // adjust that to the time browsers stay on the website e.g 4x
-    website_attempts : 1,              // set number of attempts to crawl a website if errors occur before URL is skipped
+    website_attempts : 2,              // set number of attempts to crawl a website if errors occur before URL is skipped
 
-    test_run : false,                 // testing the synchronisation
+    test_run : true,                 // testing the synchronisation
     test_iterations : 1000,           // set number of test runs
 
     

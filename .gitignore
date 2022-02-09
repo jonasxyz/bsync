@@ -136,3 +136,6 @@ dist
 
 # client settings
 ./Client/config.js
+
+# notizen
+todo.txt

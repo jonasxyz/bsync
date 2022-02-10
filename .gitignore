@@ -133,9 +133,13 @@ dist
 # logs and urlList
 
 *.csv
+./Server/logs
 
 # client settings
 ./Client/config.js
 
 # notizen
 todo.txt
+
+# oldFunctions
+./Server/oldFunctions.js

@@ -7,6 +7,8 @@ from openwpm.storage.sql_provider import SQLiteStorageProvider
 from openwpm.task_manager import TaskManager
 
 
+from write_done import writeDoneCommand #new
+
 import sys
 import fileinput
 from time import sleep 
@@ -28,7 +30,7 @@ sites = [
 
 manager_params = ManagerParams(num_browsers=NUM_BROWSERS)
 browser_params = [BrowserParams(display_mode= sys.argv[2] ) for _ in range(NUM_BROWSERS)]
-#browser_params = [BrowserParams(display_mode="headless") for _ in range(NUM_BROWSERS)]
+
 
 # Update browser configuration (use this for per-browser settings)
 for browser_param in browser_params:
@@ -46,7 +48,7 @@ for browser_param in browser_params:
     browser_param.dns_instrument = False
     #hide_webdiver = False
 
-    #my
+    # set useragent while calibration for identification at scheduler
     if userAgent != "False":
         browser_param.change_useragent = True
         sys.stdout.write("useragent set to "+ userAgent)
@@ -79,8 +81,7 @@ with TaskManager(
                 f"CommandSequence for {val} ran {'successfully' if success else 'unsuccessfully'}"
             )
 
-        # Message an den Client dass Browser gestartet ist. Dieser leitet an den Master weiter welcher wenn alle Browser bereit 	sind das browsergo/visiturl sendet 
-        # auf das in jedem Browser gewartet wird. Danach kann die Website aufgerufen werden.
+ 	# signalize that browser is ready for visiting URL
         sys.stdout.write("browserready")
         
         # Parallelize sites over all number of browsers set above.
@@ -90,6 +91,7 @@ with TaskManager(
             callback=callback,
         )
         
+        # wait for signal that all browsers are ready
         while True:
             line = sys.stdin.readline() 
             if line == "visiturl\n":
@@ -97,15 +99,15 @@ with TaskManager(
                 if waitingTime > 0:
                     sys.stdout.write("waiting " + str(waitingTime) +" seconds before websitevisit")
                     sleep(waitingTime)
-                #command_sequence.append_command(changeUserAgent())
 
                 # Start by visiting the page
                 command_sequence.append_command(GetCommand(url=site, sleep=1), timeout=30)
-
-                # Have a look at custom_command.py to see how to implement your own command
-                # command_sequence.append_command(LinkCountingCommand())
+                
+                command_sequence.append_command(writeDoneCommand())
 
                 # Run commands across all browsers (simple parallelization)
                 manager.execute_command_sequence(command_sequence)
                 #manager.close(post_process)=False #my
+                #sys.stdout.write("urldone") #new
+
                 break

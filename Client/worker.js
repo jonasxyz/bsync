@@ -57,17 +57,18 @@ socket.on("ping", function(){
 
 socket.on("url", data => {
 
+  console.log("\n\njob received " + data);
   if (config.disable_proxy==false){
     spawnedScripts.spawnProxy(config.proxy_host, config.proxy_port, config.har_destination, config.proxy_script_location, data);
   } 
   if (data.toString() === "calibration") {
     spawnedScripts.spawnCrawler(config.crawl_script, config.master_addr, config.client_name, config.script_path, config.headless, config.disable_proxy, config.proxy_host, config.proxy_port, config.client_name, 0); //hier war socket.id
-    console.log("starting calibration");
+    //console.log("job received calibration");
 
   }else if (data.toString() === "test") {
 
     spawnedScripts.spawnCrawler(config.crawl_script, config.master_addr, config.client_name, config.script_path, config.headless, config.disable_proxy, config.proxy_host, config.proxy_port, config.client_name, waitingTime); //hier war socket.id
-    console.log("starting test run");
+    //console.log("job received test run");
 
   }else {
 
@@ -76,6 +77,7 @@ socket.on("url", data => {
     } else {
       url = data;
     }  
+    //console.log("job received " + url);
 
     spawnedScripts.spawnCrawler(config.crawl_script, url, config.client_name, config.script_path, config.headless, config.disable_proxy, config.proxy_host, config.proxy_port, "False", waitingTime);
 
@@ -85,8 +87,9 @@ socket.on("url", data => {
 
 socket.on("killchildprocess", data => {
 
+  console.log("killchild triggered"); //debug
   if(data.toString() === "timeout"){
-    console.log("Browser timed out");
+    console.log("Browser timed out at master");
 
   }else{
     console.log("Crawl cancelled at master");

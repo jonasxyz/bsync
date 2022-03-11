@@ -145,4 +145,4 @@ todo.txt
 ./Server/oldFunctions.js
 
 # pychache mitmproxy_hardump
-./Client/functions/__pycache__/
+./Client/functions/__pycache__/*

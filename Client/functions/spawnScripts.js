@@ -38,18 +38,19 @@ module.exports =
 
         // listener for child process
         ls.stdout.on("data", (data) => {
+            console.log("browser stdout: " + data);
             if (data.toString().includes("browserready")) {
 
                 socket.emit("browserready", client_name);
-                console.log("Browser ready for visiting URL");
+                //console.log("Browser ready for visiting URL");
 
             }if (data.toString().includes("urldone")) { 
 
-                socket.emit("urldone");
-                console.log("URL done");
+                socket.emit("urlcrawled");
+                //console.log("URL done");
      
 
-            }else console.log("stdout: " + data);
+            }
         })
 
         ls.stderr.on("data", (err) => {
@@ -63,10 +64,15 @@ module.exports =
         })
         ls.on("close", (data) => {
 
-            if (disable_proxy == false) proxy.kill("SIGINT");
-            console.log("Child process closed.");
+            if (disable_proxy == false){
+                proxy.kill("SIGINT");
+                //process.kill(-proxy.pid);
+                console.log("Proxy closed");
+            } 
+            console.log("Child process closed");
             childExists = false;
 
+            socket.emit("browserfinished");
         })
 
         return module;
@@ -74,10 +80,15 @@ module.exports =
     },
     
     killCrawler: function () { 
-        
+        proxy.kill("SIGINT");
         if(childExists){
             if (fileformat === ".js") process.kill(-ls.pid); //ls.kill("SIGINT");
             if (fileformat === ".py") process.kill(-ls.pid);
+
+            //if (disable_proxy == false) proxy.kill("SIGINT"); // proxyfix
+            //if (disable_proxy == false) process.kill(-proxy.pid); // proxyfix
+
+
 
             childExists = false;
             console.log("Child process killed.");
@@ -88,13 +99,13 @@ module.exports =
     spawnProxy: function (proxy_host, proxy_port, har_destination, script_location, clearurl) {
 
         let urlSaveName = clearurl.replace(/^https?\:\/\//i, "")+ ".har";
-        console.log(urlSaveName)
-        proxy = spawn("mitmdump", ["--listen-host=" + proxy_host, "--listen-port=" + proxy_port, "--set=hardump=" + har_destination + urlSaveName, "-s "+script_location+"/har_dump.py"]);
+        //console.log(urlSaveName) //debug
+        proxy = spawn("mitmdump", ["--listen-host=" + proxy_host, "--listen-port=" + proxy_port, "--set=hardump=" + har_destination + urlSaveName, "-s "+script_location+"har_dump.py"]);
 
         // mitmdump --listen-host=localhost --listen-port=3031 --set=hardump=./url.har -s ./har_dump.py
         //proxy = spawn ("mitmdump", ["--listen-host="+host, "--listen-port="+port, "--set=hardump="+har_destination, "-s har_dump.py"]);
 
-        console.log("proxy spawned")
+        console.log("mitm proxy spawned listening to " + proxy_host+ ":" + proxy_port);
         proxy.stderr.on("data", (err) => {
 
             console.log("proxy error: " + err.toString());

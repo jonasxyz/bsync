@@ -135,8 +135,10 @@ dist
 *.csv
 ./Server/logs
 
-# client settings
+# settings
 ./Client/config.js
+./Server/config.js
+config.js
 
 # notizen
 todo.txt

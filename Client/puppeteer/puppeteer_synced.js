@@ -44,7 +44,7 @@ var proxyArg;
     process.stdin.on("data", async(data)=> {
 
         if(data.toString().includes("visiturl")){
-            console.log("All browsers ready. Start visting "+ url);
+            console.log("All browsers ready");
 
             //waiting
             if(waitingTime > 0){
@@ -52,6 +52,7 @@ var proxyArg;
                 await new Promise(resolve => setTimeout(resolve, waitingTime));
             } 
             
+            console.log("visiting " + url);
             await page.goto(url);
 
             await page.waitForTimeout(1000);

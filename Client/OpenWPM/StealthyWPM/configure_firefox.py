@@ -64,7 +64,6 @@ DEFAULT_GECKODRIVER_PREFS = {
     "startup.homepage_welcome_url.additional": "",
     "toolkit.startup.max_resumed_crashes": -1,
     "marionette.log.level": "Info",
-
 }
 
 
@@ -128,7 +127,10 @@ def privacy(browser_params: BrowserParams, prefs: Dict[str, Any]) -> None:
             "supported. See: "
             "https://github.com/citp/OpenWPM/issues/101"
         )
-    #my edit bsync
+        
+#my pleb edit bsync
+def bsyncoptions(browser_params: BrowserParams, prefs: Dict[str, Any]) -> None:
+    
     if browser_params.change_useragent:
         #DEFAULT_GECKODRIVER_PREFS ["general.useragent.override"]="StealthyWPM"
         prefs["general.useragent.override"] = "StealthyWPM"
@@ -136,9 +138,7 @@ def privacy(browser_params: BrowserParams, prefs: Dict[str, Any]) -> None:
         prefs["network.proxy.type"] = 1
         prefs["network.proxy.ssl"] = "localhost"
         prefs["network.proxy.ssl_port"] = "3031"
-
-
-
+    
 
 def optimize_prefs(prefs: Dict[str, Any]) -> None:
     """

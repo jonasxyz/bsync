@@ -1,6 +1,9 @@
 const io = require("socket.io-client")
 var spawnedScripts = require("./functions/spawnScripts.js");
+
 var config = require("./config.js");
+//var config = require("../config_openwpm.js");
+
 
 
 var waitingTime = 0;
@@ -55,20 +58,23 @@ socket.on("ping", function(){
 })
 
 
-socket.on("url", data => {
+socket.on("url", async data => {
 
   console.log("\n\njob received " + data);
+
   if (config.disable_proxy==false){
-    spawnedScripts.spawnProxy(config.proxy_host, config.proxy_port, config.har_destination, config.proxy_script_location, data);
+
+    await spawnedScripts.spawnProxy(data);
   } 
+
+  // spawn browser with paramters for calibration, test or normal crawl
   if (data.toString() === "calibration") {
-    spawnedScripts.spawnCrawler(config.crawl_script, config.master_addr, config.client_name, config.script_path, config.headless, config.disable_proxy, config.proxy_host, config.proxy_port, config.client_name, 0); //hier war socket.id
-    //console.log("job received calibration");
+
+    spawnedScripts.spawnCrawler( config.master_addr, config.proxy_host, config.client_name, 0);
 
   }else if (data.toString() === "test") {
 
-    spawnedScripts.spawnCrawler(config.crawl_script, config.master_addr, config.client_name, config.script_path, config.headless, config.disable_proxy, config.proxy_host, config.proxy_port, config.client_name, waitingTime); //hier war socket.id
-    //console.log("job received test run");
+    spawnedScripts.spawnCrawler( config.master_addr, config.proxy_host, config.client_name, waitingTime);
 
   }else {
 
@@ -77,9 +83,8 @@ socket.on("url", data => {
     } else {
       url = data;
     }  
-    //console.log("job received " + url);
 
-    spawnedScripts.spawnCrawler(config.crawl_script, url, config.client_name, config.script_path, config.headless, config.disable_proxy, config.proxy_host, config.proxy_port, "False", waitingTime);
+    spawnedScripts.spawnCrawler( url, config.proxy_host, "False", waitingTime);
 
   } 
 
@@ -88,6 +93,7 @@ socket.on("url", data => {
 socket.on("killchildprocess", data => {
 
   console.log("killchild triggered"); //debug
+
   if(data.toString() === "timeout"){
     console.log("Browser timed out at master");
 
@@ -101,11 +107,29 @@ socket.on("killchildprocess", data => {
 
 socket.on("browsergo", data => {
   
-  ls.stdin.write("visiturl\n");
+  browser.stdin.write("visiturl\n");
 });
 
 socket.on("waitingtime", data => {
 
   waitingTime = data;
   console.log("Calibration done: Waiting " +waitingTime +" ms before each website visit.");
+});
+
+
+process.on("SIGINT", async function(){
+
+  console.log("\nClosing child processes before exiting..");
+  await spawnedScripts.killCrawler();
+  console.log("Exiting");
+  process.exit();
+  
+
+  //kill(1, "SIGKILL", (err) => {
+    //if(err) console.log(err)
+    //console.log("Exiting");
+    //process.exit();
+
+  //});
+  
 });

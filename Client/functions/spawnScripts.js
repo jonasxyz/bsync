@@ -1,35 +1,55 @@
 const {spawn} = require('child_process');
 const path = require('path');
+var exkill = require("tree-kill");
+
+var config = require("../config.js");
+//var config = require("../config_openwpm.js");
+
+
 
 var tempUrl;
 var childExists = false;
+var isCancelled = false;
+
 
 module.exports =
 {
-    spawnCrawler: function (crawl_script, url, client_name, script_path, headless, disable_proxy, proxy_host, proxy_port, userAgent, waitingTime) {
+    spawnCrawler: async function (url, proxyHost, userAgent, waitingTime) {
 
         tempUrl = url;
-        fileformat = path.extname(crawl_script);
-        if(disable_proxy==true) proxy_host = "False"; 
+        fileformat = path.extname(config.crawl_script);
 
+        if(config.disable_proxy==true) proxyHost = "False"; 
 
         if (fileformat === ".js") {
-            ls = spawn('node', [crawl_script, url, headless, proxy_host, proxy_port, userAgent, waitingTime], { cwd: script_path, stdio: "pipe", detached: true  });
+
+            browser = spawn('node', [config.crawl_script, url, config.headless, proxyHost, config.proxy_port, userAgent, waitingTime],
+             { cwd: config.script_path, stdio: "pipe" }); // todo check detached
+
             console.log("spawned .js childprocess");
             childExists = true;
+            isCancelled = false;
 
 
         } else if (fileformat === ".py") {
-            if (headless == true) {
-                ls = spawn("conda run -n openwpm --no-capture-output python -u", [crawl_script, url, "headless", proxy_host, proxy_port, userAgent, waitingTime], { shell: true, cwd: script_path, stdio: "pipe", detached: true  });
+            if (config.headless == true) {
+
+                browser = spawn("conda run -n openwpm --no-capture-output python -u", [config.crawl_script, url, "headless", proxyHost, config.proxy_port, userAgent, waitingTime],
+                 { shell: true, cwd: config.script_path, stdio: "pipe", detached: true  });
+
             } else {
-                ls = spawn("conda run -n openwpm --no-capture-output python -u", [crawl_script, url, "native", proxy_host, proxy_port, userAgent, waitingTime], { shell: true, cwd: script_path, stdio: "pipe", detached: true });
+
+                browser = spawn("conda run -n openwpm --no-capture-output python -u", [config.crawl_script, url, "native", proxyHost, config.proxy_port, userAgent, waitingTime],
+                 { shell: true, cwd: config.script_path, stdio: "pipe", detached: true });
+
             }
             console.log("spawned .py childprocess");
             childExists = true;
+            isCancelled = false;
 
 
         } else {
+
             console.error("Fileformat not supported.");
             process.exit();
         }
@@ -37,38 +57,47 @@ module.exports =
 
 
         // listener for child process
-        ls.stdout.on("data", (data) => {
+        browser.stdout.on("data", (data) => {
+
             console.log("browser stdout: " + data);
+
             if (data.toString().includes("browserready")) {
 
-                socket.emit("browserready", client_name);
+                socket.emit("browserready", config.client_name);
                 //console.log("Browser ready for visiting URL");
 
             }if (data.toString().includes("urldone")) { 
 
-                socket.emit("urldone");
+                socket.emit("urlcrawled");
                 //console.log("URL done");
      
-
             }
         })
 
-        ls.stderr.on("data", (err) => {
+        browser.stderr.on("data", (err) => {
             var err1 = err.toString();
             console.log(err1);
             socket.emit("scripterror", err1);
         })
-        ls.on("console.error();", (data) => {
+        browser.on("console.error();", (data) => {
             console.log("childprocess error: " + data);
 
         })
-        ls.on("close", (data) => {
+        browser.on("close", async(data) => {
 
-            if (disable_proxy == false){
-                proxy.kill("SIGINT");
-                console.log("Proxy closed");
-            } 
-            console.log("Child process closed");
+            console.log("Crawler child process closed");
+
+            if (config.disable_proxy == false && isCancelled == false){
+                //proxy.kill("SIGINT");
+                //process.kill(proxy.pid);
+                //console.log("Proxy should close"); //debug
+                exkill(proxy.pid);
+                //proxy.stdin.write("shutdownproxy\n");                
+    
+            }else {
+
+                if(!isCancelled) socket.emit("browserfinished");
+            }
             childExists = false;
 
         })
@@ -77,36 +106,56 @@ module.exports =
 
     },
     
-    killCrawler: function () { 
-        
-        if(childExists){
-            if (fileformat === ".js") process.kill(-ls.pid); //ls.kill("SIGINT");
-            if (fileformat === ".py") process.kill(-ls.pid);
+    killCrawler: async function () { 
 
-            //if (disable_proxy == false) proxy.kill("SIGINT"); // proxyfix
+        isCancelled = true;
 
+        if(!childExists) return Promise.resolve();
 
-            childExists = false;
-            console.log("Child process killed.");
-        } 
+        console.log("Killing child processes");
+        if (fileformat === ".js") process.kill(-browser.pid); //browser.kill("SIGINT");
+        if (fileformat === ".py") process.kill(-browser.pid);
+
+        if (config.disable_proxy == false) exkill(proxy.pid);
+
+        //if (config.disable_proxy == false) proxy.kill("SIGINT"); // proxyfix
+        //if (config.disable_proxy == false) proxy.stdin.write("shutdownproxy\n");
+
+        childExists = false;
+        console.log("Child process killed."); 
+        return Promise.resolve();       
         
     },
 
-    spawnProxy: function (proxy_host, proxy_port, har_destination, script_location, clearurl) {
+    spawnProxy: async function (clearurl) {
 
         let urlSaveName = clearurl.replace(/^https?\:\/\//i, "")+ ".har";
-        //console.log(urlSaveName) //debug
-        proxy = spawn("mitmdump", ["--listen-host=" + proxy_host, "--listen-port=" + proxy_port, "--set=hardump=" + har_destination + urlSaveName, "-s "+script_location+"har_dump.py"]);
 
-        // mitmdump --listen-host=localhost --listen-port=3031 --set=hardump=./url.har -s ./har_dump.py
-        //proxy = spawn ("mitmdump", ["--listen-host="+host, "--listen-port="+port, "--set=hardump="+har_destination, "-s har_dump.py"]);
+        try{ 
+            proxy = spawn("mitmdump", ["--listen-host=" + config.proxy_host, "--listen-port=" + config.proxy_port, "-s "+ __dirname+"/har_dump.py", "--set=hardump=" + config.har_destination + urlSaveName ],
+             { stdio: "pipe", shell: true});
+            //  " -s "+config.script_location+"shutdown.py"
+        }
+        catch (e) {
+            console.log("Failed to spawn mitmproxy instance");
+            console.log(e);
+            Promise.reject();
+        }
+   
+        Promise.resolve().then(console.log("mitm proxy spawned listening to " + config.proxy_host+ ":" + config.proxy_port));
 
-        console.log("mitm proxy spawned listening to " + proxy_host+ ":" + proxy_port);
         proxy.stderr.on("data", (err) => {
 
             console.log("proxy error: " + err.toString());
 
-        })
+        })                
+        proxy.on("close", async(data) => {
 
+            console.log("Proxy closed");
+            if(!isCancelled) socket.emit("browserfinished");
+        })
+        //proxy.stdout.on("data", (data) => {
+            //console.log("proxy stdout: " + data);
+        //}
     }
 }

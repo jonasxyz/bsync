@@ -146,3 +146,5 @@ todo.txt
 
 # pychache mitmproxy_hardump
 ./Client/functions/__pycache__/*
+*.pyc
+*.cpython.38.pyc

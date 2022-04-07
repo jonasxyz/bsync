@@ -43,6 +43,7 @@ var tempUrl;
 var numIterations;
 var calibrationTime;
 var pingTime;
+var dateUrlDone;
 
 var timeUrlSent;
 var timeAllBrowsersReady;
@@ -111,7 +112,7 @@ io.on("connection", socket => {
 
             console.log("\x1b[33mSTATUS: \x1b[0m" + "Reconnection worked.\nRestarting with calibration then continuing the crawl with the last URL...", "\x1b[0m");
 
-            io.sockets.emit("killchildprocess", "timeout");
+            //io.sockets.emit("killchildprocess", "timeout");
 
             statFunctions.flushArray(arrayClients, false);
             statFunctions.flushArray(arrayStatistics, true);
@@ -189,19 +190,30 @@ io.on("connection", socket => {
     
     socket.on("scripterror", (data)=> {
         console.log("\x1b[31mERROR: " + "Error at "+ socket.data.clientname+ " while executing crawl script","\x1b[0m");
-        // console.log(data); //debug
+         console.log(data); //debug
     })
 
+    socket.on("urlcrawled", (data) => {
 
+        dateUrlDone = Date.now();
 
-    socket.on("urldone", async (data) => {
+        let arrayPosition = helperFunctions.searchArray(calibrationDone ? arrayStatistics : arrayClients, socket.data.clientname.toString(), 1);;
+        calibrationDone ? (tempArray = arrayStatistics) : (tempArray = arrayClients);
+
+        //insert time from sending url to receiving urlDone into statistics 
+        tempArray[arrayPosition].doneArray.push((dateUrlDone - timeUrlSent));
+        console.log ("pushed " + (dateUrlDone - timeUrlSent)) 
+        
+    })
+
+    socket.on("browserfinished", async (data) => {
 
         if (activeClients != config.num_clients || ongoingCrawl == false || browsersReady != config.num_clients) return; 
 
 
         // triggered everytime one browser finished while crawling
 
-        let dateUrlDone = Date.now();
+        
         pendingJobs -= 1;
         
 
@@ -211,12 +223,14 @@ io.on("connection", socket => {
         calibrationDone ? (tempArray = arrayStatistics, tempIterations = 0) : (tempArray = arrayClients , tempIterations = testsDone);
 
         //insert time from sending url to receiving urlDone into statistics 
-        tempArray[arrayPosition].doneArray.push((dateUrlDone - timeUrlSent));
+        //tempArray[arrayPosition].doneArray.push((dateUrlDone - timeUrlSent));
+        let tempDateUrlDone = tempArray[arrayPosition].doneArray[tempIterations];
+        console.log(tempDateUrlDone +" MINUS " + timeUrlSent)
 
         if(! (config.test_run == false && calibrationDone == true )) {  // always except normal crawl after calibration
 
             console.log("\x1b[34mURLDONE:\x1b[0m",  tempArray[arrayPosition].workerName , " URL done signal \x1b[34m",
-                    ( (dateUrlDone - timeUrlSent) -  tempArray[arrayPosition].requestArray[tempIterations]) , "ms\x1b[0m after receiving request");
+                    ( tempDateUrlDone -  tempArray[arrayPosition].requestArray[tempIterations]) , "ms\x1b[0m after receiving request");
 
             // console.log( (dateUrlDone - timeUrlSent) - tempArray[arrayPosition].requestArray[tempIterations] , " " , dateUrlDone , " - " , tempArray[arrayPosition].requestArray[tempIterations] ); //debug
 
@@ -231,12 +245,12 @@ io.on("connection", socket => {
 
             if(config.test_run == false){
 
-                tempArray[arrayPosition].dateArray.push(new Date(dateUrlDone).toISOString()); 
+                tempArray[arrayPosition].dateArray.push(new Date(tempDateUrlDone + timeUrlSent).toISOString()); 
 
                 console.log("\x1b[34mCRAWLED:\x1b[0m", arrayClients[calibrationArrayPosition].workerName , "crawled URL", tempUrl , "finished\x1b[34m",
-                (dateUrlDone - timeUrlSent) , "ms\x1b[0m after distribtung URL");
+                tempDateUrlDone , "ms\x1b[0m after distribtung URL");
 
-                let estimatedRequest = (dateUrlDone - timeUrlSent) - arrayClients[calibrationArrayPosition].offsetDone;
+                let estimatedRequest = tempDateUrlDone  - arrayClients[calibrationArrayPosition].offsetDone;
                 // console.log ((dateUrlDone - timeUrlSent) , " minus " + arrayClients[calibrationArrayPosition].offsetDone , " gleich " , estimatedRequest ); //debug
                 tempArray[arrayPosition].requestArray.push(estimatedRequest);
 

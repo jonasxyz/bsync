@@ -1,14 +1,16 @@
 const io = require("socket.io-client")
 var spawnedScripts = require("./functions/spawnScripts.js");
 
-var config = require("./config.js");
+const config = require("./config.js");
+const masterAdress = config.base.master_addr;
+const worker = config.worker;
 //var config = require("../config_openwpm.js");
 
 
 
 var waitingTime = 0;
 
-socket = io(config.master_addr,{
+socket = io(masterAdress,{
   "reconnection" : true,
   "reconnectionDelay" : 1000,
   "timeout" : 5000
@@ -20,7 +22,7 @@ console.log("client trying to connect to master server...");
 
 socket.on("connect", data => {
   console.log("Client " + socket.id+" succesfully connected");
-  socket.emit("initialization", config.client_name);
+  socket.emit("initialization", worker.client_name);
 
 });
 
@@ -54,7 +56,7 @@ socket.io.on("reconnect_attempt", (attempt)=>{
 
 socket.on("ping", function(){
   console.log("Testing latency to master server...");
-  socket.emit("pingresults", config.client_name);
+  socket.emit("pingresults", worker.client_name);
 })
 
 
@@ -62,7 +64,7 @@ socket.on("url", async data => {
 
   console.log("\n\njob received " + data);
 
-  if (config.disable_proxy==false){
+  if (worker.enable_proxy){
 
     await spawnedScripts.spawnProxy(data);
   } 
@@ -70,11 +72,11 @@ socket.on("url", async data => {
   // spawn browser with paramters for calibration, test or normal crawl
   if (data.toString() === "calibration") {
 
-    spawnedScripts.spawnCrawler( config.master_addr, config.proxy_host, config.client_name, 0);
+    spawnedScripts.spawnCrawler(masterAdress, worker.proxy_host, worker.client_name, 0);
 
   }else if (data.toString() === "test") {
 
-    spawnedScripts.spawnCrawler( config.master_addr, config.proxy_host, config.client_name, waitingTime);
+    spawnedScripts.spawnCrawler(masterAdress, worker.proxy_host, worker.client_name, waitingTime);
 
   }else {
 
@@ -84,7 +86,7 @@ socket.on("url", async data => {
       url = data;
     }  
 
-    spawnedScripts.spawnCrawler( url, config.proxy_host, "False", waitingTime);
+    spawnedScripts.spawnCrawler( url, worker.proxy_host, "False", waitingTime);
 
   } 
 

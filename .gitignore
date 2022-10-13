@@ -148,3 +148,10 @@ todo.txt
 ./Client/functions/__pycache__/*
 *.pyc
 *.cpython.38.pyc
+
+# eslint
+.eslintrc.js
+
+# npm packages whole directory
+.\package-lock.json
+.\package.json

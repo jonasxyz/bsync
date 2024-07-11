@@ -1,5 +1,16 @@
 #!/bin/bash
 
+
+# This script automates the installation of bsync-client
+# requirements and automation framework setup
+
+# Requirements: git, curl, nodejs, npm: socket.io-client and puppeteer,
+# python3, python3-pip, mitmproxy, OpenWPM, p11-kit
+
+# Arguments:
+# --no-puppeteer: Doesn't install and configure OpenWPM
+# --no-openwpm: Doesn't install puppeteer
+
 # Exit the script if any command fails
 set -e
 
@@ -21,8 +32,12 @@ curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
 sudo apt-get install -y nodejs
 
 # Install npm packages
-echo "Installing npm packages socket.io-client and puppeteer..."
+echo "Installing npm package socket.io-client..."
 sudo npm install -g socket.io-client puppeteer
+echo "Installing npm package puppeteer..."
+if [ "$1" != "--no-puppeteer" ]; then
+	sudo npm install -g puppeteer
+fi
 
 # Install the latest Python version and pip
 echo "Installing Python and pip..."
@@ -30,28 +45,45 @@ sudo apt-get install -y python3 python3-pip
 
 # Install mitmproxy using pip
 echo "Installing mitmproxy..."
-pip3 install mitmproxy
+pip3 install mitmproxy --break-system-packages # allow system-wide installation
 
-# Clone and install OpenWPM from GitHub
-echo "Cloning and installing OpenWPM..."
-git clone https://github.com/mozilla/OpenWPM.git
-cd OpenWPM
-pip3 install -r requirements.txt
-python3 setup.py install
-cd ..
-
-# Install and activate Conda
-echo "Installing Miniconda..."
-CONDA_URL="https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh"
-curl -o Miniconda3-latest-Linux-x86_64.sh $CONDA_URL
-bash Miniconda3-latest-Linux-x86_64.sh -b -p $HOME/miniconda
-eval "$($HOME/miniconda/bin/conda shell.bash hook)"
-conda init
+# Start mitmproxy for CA certificate generation
+echo "Starting mitmproxy"
+mitmdump &
+MITMPROXY_PID=$!
+sleep 4
+echo "Stopping mitmproxy"
+kill $MITMPROXY_PID
 
 # Add mitmproxy CA certificate
 echo "Adding mitmproxy CA certificate..."
 sudo cp ~/.mitmproxy/mitmproxy-ca-cert.pem /usr/local/share/ca-certificates/
 sudo update-ca-certificates
 
-# Installation complete
+if [ "$1" != "--no-openwpm" ]; then
+	# Install and activate Mamba as Conda replacement
+	echo "Installing Mamba..."
+	curl -L -O "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$(uname)-$(uname -m).sh"
+	bash Miniforge3-$(uname)-$(uname -m).sh
+
+	echo "Restarting Shell..."
+	source ~/.bashrc
+
+	echo "Cloning and installing OpenWPM..."
+	cd /home/$USER/Desktop/
+	git clone https://github.com/mozilla/OpenWPM.git
+	cd OpenWPM
+	micromamba activate /home/§USER/miniforge3
+	./install.sh
+	cd ..
+
+	# Replace OpenWPMs libnssckbi.so with p11-kit's file so Firefox
+	# reads cerifcates from system certificate store
+	echo "Setting up OpenWPM's Firefox for proxy use"
+	# Todo nur noch prüfen ob die p11 Datei bei stock Ubuntu drauf ist
+	sudo mv /home/$USER/Desktop/OpenWPM/firefox-bin/libnssckbi.so /home/$USER/Desktop/OpenWPM/firefox-bin/libnssckbi.so.bak
+	sudo ln -s /usr/lib/x86_64-linux-gnu/pkcs11/p11-kit-trust.so /home/$USER/Desktop/OpenWPM/firefox-bin/libnssckbi.so
+	
+fi
+
 echo "All installations are complete!"

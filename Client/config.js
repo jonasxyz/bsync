@@ -1,7 +1,7 @@
 const configuration = {
 
 	base: {
-		master_addr: "http://192.168.178.37:3000", // e.g. "http://localhost:3000"
+		master_addr: "http://192.168.178.49:3000", // e.g. "http://localhost:3000"
 	},
 	puppeteer: {
 		client_name: "puppeteer", 						// must be unique
@@ -11,9 +11,12 @@ const configuration = {
 		script_path: "/home/user/Schreibtisch/bsync/Client/puppeteer",
 
 		enable_proxy : true, 							// set true to disable mitmproxy
-		har_destination : "/home/user/Schreibtisch/HTTP/puppeteer/",		// e.g. "/home/user/http/"
+		har_destination : "/home/user/Schreibtisch/dump/puppeteer/",		// e.g. "/home/user/http/"
 		proxy_host : "127.0.0.1",
 		proxy_port : "3031",
+
+		enable_tcpdump: true,
+		pcapng_destination: "/home/user/Schreibtisch/dump/puppeteer/"
 	},
 	StealthyWPM: {
 		client_name : "OpenWPM", 
@@ -33,6 +36,6 @@ const configuration = {
 module.exports = {
 	base : configuration.base,
 	// set worker
-	// worker : configuration.puppeteer,
-	worker : configuration.StealthyWPM,
+	worker : configuration.puppeteer,
+	//worker : configuration.StealthyWPM,
 }

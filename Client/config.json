@@ -1,0 +1,15 @@
+{
+  "base": {
+    "master_addr": "http://192.168.178.83:3000"
+  },
+  "worker": {
+    "client_name": "OpenWPM",
+    "headless": false,
+    "crawl_script": "openwpm_synced.py",
+    "script_path": "/home/client1/Desktop/OpenWPM",
+    "enable_proxy": true,
+    "har_destination": "/home/client1/Downloads/HTTP/",
+    "proxy_host": "127.0.0.1",
+    "proxy_port": "3031"
+  }
+}

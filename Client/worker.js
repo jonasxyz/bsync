@@ -3,7 +3,7 @@ const fs = require('fs');
 var spawnedScripts = require("./functions/spawnScripts.js");
 
 const config = require("./config.js");
-const masterAdress = config.base.master_addr;
+const masterAdress = config.activeConfig.base.master_addr;
 const worker = config.worker;
 //var config = require("../config_openwpm.js");
 

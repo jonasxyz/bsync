@@ -148,3 +148,9 @@ todo.txt
 ./Client/functions/__pycache__/*
 *.pyc
 *.cpython.38.pyc
+Client/Testing/bashtest.sh
+Client/Testing/config.js
+Client/Testing/config.json
+Client/Testing/configimport.py
+Client/Testing/workerTest.js
+Client/configV1.js

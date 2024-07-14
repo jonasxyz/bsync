@@ -18,10 +18,6 @@ set -e
 echo "Updating and upgrading the system..."
 sudo apt-get update -y && sudo apt-get upgrade -y
 
-# Install Git
-echo "Installing Git..."
-sudo apt-get install -y git
-
 # Install cURL
 echo "Installing cURL..."
 sudo apt-get install -y curl
@@ -61,10 +57,21 @@ sudo cp ~/.mitmproxy/mitmproxy-ca-cert.pem /usr/local/share/ca-certificates/
 sudo update-ca-certificates
 
 if [ "$1" != "--no-openwpm" ]; then
+
+	# Install make and gcc ...
+	sudo apt-get install -y make gcc
+
 	# Install and activate Mamba as Conda replacement
-	echo "Installing Mamba..."
-	curl -L -O "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$(uname)-$(uname -m).sh"
-	bash Miniforge3-$(uname)-$(uname -m).sh
+	#echo "Installing Mamba..."
+	#curl -L -O "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$(uname)-$(uname -m).sh"
+	#bash Miniforge3-$(uname)-$(uname -m).sh
+
+	# todo openwpm install-mamba script takes mambaforge
+	echo "Installing Mamba... openwpm way"
+	curl -L -O "https://github.com/conda-forge/miniforge/releases/latest/download/Mambaforge-$(uname)-$(uname -m).sh" #-O mamba.sh;
+	#bash mamba.sh -b -p $HOME/mamba
+	bash Mambaforge-$(uname)-$(uname -m).sh
+	#source "$HOME/mamba/etc/profile.d/conda.sh"
 
 	echo "Restarting Shell..."
 	source ~/.bashrc
@@ -73,8 +80,11 @@ if [ "$1" != "--no-openwpm" ]; then
 	cd /home/$USER/Desktop/
 	git clone https://github.com/mozilla/OpenWPM.git
 	cd OpenWPM
-	micromamba activate /home/§USER/miniforge3
+	micromamba activate /home/§USER/miniforge3 warum war das
 	./install.sh
+	# OpenWPM v0.28.0 somehow fails executing script building-extension.py
+	# manually calling it with deactivating conda env before fixes it
+	./scripts/build-extension.sh
 	cd ..
 
 	# Replace OpenWPMs libnssckbi.so with p11-kit's file so Firefox
@@ -83,6 +93,10 @@ if [ "$1" != "--no-openwpm" ]; then
 	# Todo nur noch prüfen ob die p11 Datei bei stock Ubuntu drauf ist
 	sudo mv /home/$USER/Desktop/OpenWPM/firefox-bin/libnssckbi.so /home/$USER/Desktop/OpenWPM/firefox-bin/libnssckbi.so.bak
 	sudo ln -s /usr/lib/x86_64-linux-gnu/pkcs11/p11-kit-trust.so /home/$USER/Desktop/OpenWPM/firefox-bin/libnssckbi.so
+
+	# Paste bsync's crawl script to OpenWPM folder
+	# todo add configure firefox.py deploy.. config.py ..
+	# cp $(pwd)/OpenWPM/openwpm_synced.py /home/$USER/Desktop/OpenWPM/ #funktioniert
 	
 fi
 

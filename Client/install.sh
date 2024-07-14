@@ -4,12 +4,13 @@
 # This script automates the installation of bsync-client
 # requirements and automation framework setup
 
-# Requirements: git, curl, nodejs, npm: socket.io-client and puppeteer,
-# python3, python3-pip, mitmproxy, OpenWPM, p11-kit
+# Following components will be installed: curl, nodejs, npm: socket.io-client and puppeteer,
+# python3, python3-pip, mitmproxy, OpenWPM, p11-kit, g++, make, gcc, bison, patchelf, gawk
 
 # Arguments:
 # --no-puppeteer: Doesn't install and configure OpenWPM
 # --no-openwpm: Doesn't install puppeteer
+# --no-node: Doesn't install NodeJS
 
 # Exit the script if any command fails
 set -e
@@ -22,26 +23,79 @@ sudo apt-get update -y && sudo apt-get upgrade -y
 echo "Installing cURL..."
 sudo apt-get install -y curl
 
-# Install the latest LTS version of Node.js
-echo "Installing Node.js LTS version..."
-curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
-sudo apt-get install -y nodejs
+check_node_version() {
+    if command -v node &> /dev/null; then
+        local node_version=$(node --version | cut -d. -f1 | cut -dv -f2)
+        if (( node_version >= 18 )); then
+            return 0
+        fi
+    fi
+    return 1
+}
 
-# Install npm packages
-echo "Installing npm package socket.io-client..."
-sudo npm install -g socket.io-client puppeteer
+# Check if Node.js 18 or newer is installed
+if check_node_version; then
+    echo "Node.js version 18 or newer is already installed."
+else
+    echo "Node.js version 18 or newer is not installed. Installing now..."
+
+
+	# Install Node.js Version compatible to Ubuntu release
+	ubuntu_version=$(lsb_release -rs)
+
+	if [[ "$ubuntu_version" == "18.04" ]]; then
+		echo "Ubuntu version is 18.04. "
+		#curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash - # puppeteer requires Node>=18
+
+		# Workaround installing NodeJS 20 on Ubuntu18.04
+		# https://github.com/nodesource/distributions/issues/1392#issuecomment-1815887430
+		cd /home/$USER/Downloads/
+		sudo apt-get install -y g++ make gcc bison
+
+		curl -L https://raw.githubusercontent.com/tj/n/master/bin/n -o n
+		sudo bash n 20
+
+		# Build and install glibc 2.28:
+		sudo apt install -y gawk
+		cd ~
+		wget -c https://ftp.gnu.org/gnu/glibc/glibc-2.28.tar.gz
+		tar -zxf glibc-2.28.tar.gz
+		cd glibc-2.28
+		pwd
+		mkdir glibc-build
+		cd glibc-build
+		../configure --prefix=/opt/glibc-2.28
+		make -j 4 # Use all 4 Jetson Nano cores for much faster building
+		sudo make install
+		cd ..
+		rm -fr glibc-2.28 glibc-2.28.tar.gz
+		
+		# Patch the installed Node 20 to work with /opt/glibc-2.28 instead: 
+		sudo apt install -y patchelf
+		sudo patchelf --set-interpreter /opt/glibc-2.28/lib/ld-linux-x86-64.so.2 --set-rpath /opt/glibc-2.28/lib/:/lib/x86_64-linux-gnu/:/usr/lib/x86_64-linux-gnu/ /usr/local/bin/node
+
+	elif [[ "$(printf '%s\n' "$ubuntu_version" "18.04" | sort -V | head -n1)" == "18.04" ]]; then
+		echo "Ubuntu version is newer than 18.04. Installing Latest Node.js LTS release"
+		curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
+		sudo apt-get install -y nodejs
+	else
+		echo "Ubuntu version is older than 18.04"
+	fi
+fi
+node --version
+
 echo "Installing npm package puppeteer..."
 if [ "$1" != "--no-puppeteer" ]; then
 	sudo npm install -g puppeteer
 fi
 
-# Install the latest Python version and pip
+# Install latest Python version and pip
 echo "Installing Python and pip..."
 sudo apt-get install -y python3 python3-pip
 
 # Install mitmproxy using pip
 echo "Installing mitmproxy..."
-pip3 install mitmproxy --break-system-packages # allow system-wide installation
+pip3 install mitmproxy # --break-system-packages # allow system-wide installation
 
 # Start mitmproxy for CA certificate generation
 echo "Starting mitmproxy"
@@ -75,16 +129,17 @@ if [ "$1" != "--no-openwpm" ]; then
 
 	echo "Restarting Shell..."
 	source ~/.bashrc
+	eval "$(/home/$USER/mambaforge/bin/conda shell.bash hook)"
+	conda init
 
 	echo "Cloning and installing OpenWPM..."
 	cd /home/$USER/Desktop/
-	git clone https://github.com/mozilla/OpenWPM.git
+	git clone https://github.com/jonasxyz/OpenWPM.git
 	cd OpenWPM
-	micromamba activate /home/§USER/miniforge3 warum war das
+
+	# micromamba activate /home/§USER/miniforge3 #OpenWPM still utilizing mambaforge
+	# micromamba activate /home/§USER/mambaforge # not working if not auto-initialized
 	./install.sh
-	# OpenWPM v0.28.0 somehow fails executing script building-extension.py
-	# manually calling it with deactivating conda env before fixes it
-	./scripts/build-extension.sh
 	cd ..
 
 	# Replace OpenWPMs libnssckbi.so with p11-kit's file so Firefox

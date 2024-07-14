@@ -72,13 +72,20 @@ module.exports =
         } else if (fileformat === ".py") {
             if (worker.headless == true) {
 
-                browser = spawn("conda run -n openwpm --no-capture-output python -u", [worker.crawl_script, url, "headless", proxyHost, worker.proxy_port, userAgent, waitingTime],
-                 { shell: true, cwd: worker.script_path, stdio: "pipe", detached: true  });
+                //browser = spawn("conda run -n openwpm --no-capture-output python -u", [worker.crawl_script, url, "headless", proxyHost, worker.proxy_port, userAgent, waitingTime],
+                // { shell: true, cwd: worker.script_path, stdio: "pipe", detached: true  });
+                //neu 21:33 14-07-24
+                browser = spawn("conda run -n openwpm --no-capture-output python -u", [worker.crawl_script, "--url " + url, "--headless", "--proxyhost " + proxyHost,
+                    "--proxyport " + worker.proxy_port, "--useragent" + userAgent, "--waitingtime" + waitingTime],
+                    { shell: true, cwd: worker.script_path, stdio: "pipe", detached: true  });
 
             } else {
 
-                browser = spawn("conda run -n openwpm --no-capture-output python -u", [worker.crawl_script, url, "native", proxyHost, worker.proxy_port, userAgent, waitingTime],
-                 { shell: true, cwd: worker.script_path, stdio: "pipe", detached: true });
+                //browser = spawn("conda run -n openwpm --no-capture-output python -u", [worker.crawl_script, url, "native", proxyHost, worker.proxy_port, userAgent, waitingTime],
+                // { shell: true, cwd: worker.script_path, stdio: "pipe", detached: true });
+                browser = spawn("conda run -n openwpm --no-capture-output python -u", [worker.crawl_script, "--url " + url, "--proxyhost " + proxyHost,
+                    "--proxyport " + worker.proxy_port, "--useragent" + userAgent, "--waitingtime" + waitingTime],
+                    { shell: true, cwd: worker.script_path, stdio: "pipe", detached: true  });
 
             }
             console.log("spawned .py childprocess");

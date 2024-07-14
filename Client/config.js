@@ -4,7 +4,8 @@ const path = require('path');
 const configuration = {
 
 	base: {
-		master_addr: "http://192.168.178.83:3000", // e.g. "http://localhost:3000"
+		master_addr: "http://192.168.178.49:3000", 		// e.g. "http://localhost:3000"
+		pagevisit_duration: 3								// specify time in seconds the browser stays on websites
 
 	},
 	puppeteer: {
@@ -26,8 +27,8 @@ const configuration = {
 		headless : false,
 
 		crawl_script : "openwpm_synced.py", 
-		// script_path : "/home/user/Schreibtisch/StealthyWPM", // todo - check location with install.sh
-		script_path : "/home/" + process.env.USERNAME +"/Desktop/OpenWPM", // todo - check location with install.sh
+		// script_path : "/home/user/Schreibtisch/StealthyWPM",
+		script_path : "/home/" + process.env.USERNAME +"/Desktop/OpenWPM", 
 
 
 		enable_proxy : true,

@@ -6,7 +6,9 @@ import sqlite3
 
 import pyshark # if analyzing .pcapng
 
-csv_file_path = '/home/user/Schreibtisch/dump/scriptDump/outputSet.csv'
+dir_path = f"/home/{os.environ.get('USER')}/Downloads/PoC/"
+
+csv_file_path = f"/home/{os.environ.get('USER')}/Downloads/PoC/outputSet.csv"
 # usage
 # python compareHarSQLite3.py /home/user/Schreibtisch/dump/scriptDump/202304051746.har /home/user/Schreibtisch/OpenWPM/datadir/crawl-data.sqlite
 
@@ -259,12 +261,12 @@ print('Additional URLs in file1:', num_additional_urls_in_file1)
 print('Additional URLs in file2:', num_additional_urls_in_file2)
 
 # Write the additional_urls_in_file1 to a text file
-with open('/home/user/Schreibtisch/dump/scriptDump/additional_urls_in_file1.txt', 'w') as f:
+with open(f"{dir_path}/additional_urls_in_file1.txt", 'w') as f:
     for url in additional_urls_in_file1:
         f.write(f"{url}\n")
 
 # Write the additional_urls_in_file2 to a text file
-with open('/home/user/Schreibtisch/dump/scriptDump/additional_urls_in_file2.txt', 'w') as f:
+with open(f"{dir_path}/additional_urls_in_file2.txt", 'w') as f:
     for url in additional_urls_in_file2:
         f.write(f"{url}\n")
 

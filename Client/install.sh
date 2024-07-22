@@ -84,11 +84,6 @@ else
 fi
 node --version
 
-echo "Installing npm package puppeteer..."
-if [ "$1" != "--no-puppeteer" ]; then
-	sudo npm install -g puppeteer
-fi
-
 # Install latest Python version and pip
 echo "Installing Python and pip..."
 sudo apt-get install -y python3 python3-pip
@@ -109,6 +104,26 @@ kill $MITMPROXY_PID
 echo "Adding mitmproxy CA certificate..."
 sudo cp ~/.mitmproxy/mitmproxy-ca-cert.pem /usr/local/share/ca-certificates/
 sudo update-ca-certificates
+
+echo "Installing npm package puppeteer..."
+if [ "$1" != "--no-puppeteer" ]; then
+	sudo npm install -g puppeteer
+
+	SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+	cd "$SCRIPT_DIR/puppeteer"
+	
+	echo "Start puppeteer for generating CA cert destination "
+	node puppeteer_synced.js &
+	PUPPETEER_PID=$!
+	sleep 4
+	echo "Stopping puppeteer"
+	kill $PUPPETEER_PID
+
+	# Add mitmproxy SSL certificate into Chromium Trusted CA Storage
+	sudo apt install libnss3-tools
+	certutil -d sql:/home/$USER/.pki/nssdb -A -t "CT,c,c" -n "mitmproxy_cert" -i /usr/local/share/ca-certificates/mitmproxy-ca-cert.pem
+	# https://superuser.com/a/1703365
+fi
 
 if [ "$1" != "--no-openwpm" ]; then
 
@@ -134,7 +149,8 @@ if [ "$1" != "--no-openwpm" ]; then
 
 	echo "Cloning and installing OpenWPM..."
 	cd /home/$USER/Desktop/
-	git clone https://github.com/jonasxyz/OpenWPM.git
+	git clone https://github.com/openwpm/OpenWPM.git
+	# git clone https://github.com/openwpm/OpenWPM.git -- branch v0.28.0 # check v0.29.0 compatibility
 	cd OpenWPM
 
 	# micromamba activate /home/§USER/miniforge3 #OpenWPM still utilizing mambaforge
@@ -149,9 +165,12 @@ if [ "$1" != "--no-openwpm" ]; then
 	sudo mv /home/$USER/Desktop/OpenWPM/firefox-bin/libnssckbi.so /home/$USER/Desktop/OpenWPM/firefox-bin/libnssckbi.so.bak
 	sudo ln -s /usr/lib/x86_64-linux-gnu/pkcs11/p11-kit-trust.so /home/$USER/Desktop/OpenWPM/firefox-bin/libnssckbi.so
 
-	# Paste bsync's crawl script to OpenWPM folder
+	Paste bsync's crawl script to OpenWPM folder
 	# todo add configure firefox.py deploy.. config.py ..
-	# cp $(pwd)/OpenWPM/openwpm_synced.py /home/$USER/Desktop/OpenWPM/ #funktioniert
+	# Determine the script's directory
+	# WORKING_DIR="$(dirname "$(readlink -f "$0")")"
+	# echo "Working directory is: $WORKING_DIR"
+	cp $(pwd)/OpenWPM/openwpm_synced.py /home/$USER/Desktop/OpenWPM/ #funktioniert
 	
 fi
 

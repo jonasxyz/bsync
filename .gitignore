@@ -151,3 +151,6 @@ todo.txt
 Client/Testing/*
 Client/configV1.js
 Client/config.json
+Client/config.json
+Client/puppeteer/puppeteer_synced copy.js
+Client/config.json

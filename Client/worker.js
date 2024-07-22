@@ -3,8 +3,9 @@ const fs = require('fs');
 var spawnedScripts = require("./functions/spawnScripts.js");
 
 const config = require("./config.js");
+const { url } = require("inspector");
 const masterAdress = config.activeConfig.base.master_addr;
-const worker = config.worker;
+const worker = config.activeConfig.worker;
 //var config = require("../config_openwpm.js");
 
 const dirName = 0;
@@ -61,40 +62,88 @@ socket.on("ping", function(){
 })
 
 
+// socket.on("url", async data => {
+
+//   console.log("\n\n\x1b[36mSOCKETIO:\x1b[0m Job received (Signal url) " + data );
+//   //console.log("\n\njob received " + data);
+
+
+//   // spawn browser with paramters for calibration, test or normal crawl
+//   if (data.toString() === "calibration") {
+
+//     spawnedScripts.spawnCrawler(masterAdress, worker.proxy_host, worker.client_name, 0, "calibration");
+
+//   }else if (data.toString() === "test") {
+
+//     spawnedScripts.spawnCrawler(masterAdress, worker.proxy_host, worker.client_name, waitingTime, "calibration");
+
+//   }else {
+
+//     // For now puppeteer does not append the protocol automatically  https://pptr.dev/api/puppeteer.page.goto
+
+//     if (!/^(?:f|ht)tps?\:\/\//.test(data)) {
+//       url = "http://" + data;
+//     } else {
+//       url = data;
+//     } 
+
+//     spawnedScripts.spawnCrawler( url, worker.proxy_host, "False", waitingTime, data);
+
+//   }
+
+//   // Spawn capturer moved to back
+//   if (worker.enable_proxy) await spawnedScripts.spawnProxy(data);
+//   if (worker.enable_tcpdump) await spawnedScripts.spawnDump(data);
+
+// })
+
 socket.on("url", async data => {
+  console.log("\n\n\x1b[36mSOCKETIO:\x1b[0m Job received (Signal url) " + data);
 
-  console.log("\n\n\x1b[36mSOCKETIO:\x1b[0m Job received (Signal url) " + data );
-  //console.log("\n\njob received " + data);
+  const config = createCrawlConfig(data);
 
-
-  // spawn browser with paramters for calibration, test or normal crawl
-  if (data.toString() === "calibration") {
-
-    spawnedScripts.spawnCrawler(masterAdress, worker.proxy_host, worker.client_name, 0, "calibration");
-
-  }else if (data.toString() === "test") {
-
-    spawnedScripts.spawnCrawler(masterAdress, worker.proxy_host, worker.client_name, waitingTime, "calibration");
-
-  }else {
-
-    // For now puppeteer does not append the protocol automatically  https://pptr.dev/api/puppeteer.page.goto
-
-    if (!/^(?:f|ht)tps?\:\/\//.test(data)) {
-      url = "http://" + data;
-    } else {
-      url = data;
-    } 
-
-    spawnedScripts.spawnCrawler( url, worker.proxy_host, "False", waitingTime, data);
-
-  }
+  spawnedScripts.spawnCrawler(config);
 
   // Spawn capturer moved to back
   if (worker.enable_proxy) await spawnedScripts.spawnProxy(data);
   if (worker.enable_tcpdump) await spawnedScripts.spawnDump(data);
 
-})
+});
+
+function createCrawlConfig(data) {
+  const config = {
+      url: '',
+      proxyHost: worker.proxy_host,
+      userAgent: worker.client_name,
+      waitingTime: 0,
+      clearUrl: data,
+      headless: worker.headless,
+  };
+
+  if (data.toString() === "calibration") { // pass scheduler Webserver as URL to visit
+      config.url = masterAdress;
+      config.userAgent = worker.client_name;
+  } else if (data.toString() === "test") {
+      config.url = masterAdress;
+      config.userAgent = worker.client_name;
+      config.waitingTime = waitingTime;
+  } else {
+      config.url = normalizeUrl(data);
+      config.userAgent = "False";
+      config.waitingTime = waitingTime;
+  }
+
+  return config;
+}
+//     // For now puppeteer does not append the protocol automatically  https://pptr.dev/api/puppeteer.page.goto
+
+function normalizeUrl(data) {
+  if (!/^(?:f|ht)tps?\:\/\//.test(data)) {
+      return "http://" + data;
+  }
+  return data;
+}
+
 
 socket.on("killchildprocess", data => {
 

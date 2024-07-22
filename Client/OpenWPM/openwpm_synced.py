@@ -1,41 +1,59 @@
+import argparse
+import sys
 from pathlib import Path
+from typing import Literal
+from time import sleep
 
+import tranco
+
+from custom_command import LinkCountingCommand
 from openwpm.command_sequence import CommandSequence
 from openwpm.commands.browser_commands import GetCommand
 from openwpm.config import BrowserParams, ManagerParams
 from openwpm.storage.sql_provider import SQLiteStorageProvider
 from openwpm.task_manager import TaskManager
 
+parser = argparse.ArgumentParser()
+parser.add_argument("--url", type=str, default="http://www.example.com", help="URL to visit")
 
-from write_done import writeDoneCommand #new
+parser.add_argument("--tranco", action="store_true", default=False)
+parser.add_argument("--headless", action="store_true", default=False)
+parser.add_argument("--useragent", type=str, default=None, help="Set a custom User-Agent")
+parser.add_argument("--proxyhost", type=str, default=None, help="Set the proxy host")
+parser.add_argument("--proxyport", type=int, default=None, help="Set the proxy port")
+parser.add_argument("--waitingtime", type=int, default=0, help="Waiting time before visiting URL")
+parser.add_argument("--crawldatapath", type=str, default="./datadir/", help="set location for OpenWPMs generated crawl data")
 
-import sys
-import fileinput
-from time import sleep 
 
-# get time to wait before visiting website from arguments and convert to seconds
-waitingTime = (int(sys.argv[6])) / 1000
-userAgent = sys.argv[5]
-proxy = sys.argv[3]
-proxyPort = sys.argv[4]
+args = parser.parse_args()
 
-# The list of sites that we wish to crawl
-NUM_BROWSERS = 1
-sites = [
-    sys.argv[1]
-]
+sites = [args.url]
+
+# Debug print to check initial value of sites
+# print(f"Initial value of sites: {sites}")
+
+#if args.tranco:
+#    # Load the latest tranco list. See https://tranco-list.eu/
+#    print("Loading tranco top sites list...")
+#    t = tranco.Tranco(cache=True, cache_dir=".tranco")
+#    latest_list = t.list()
+#    sites = ["http://" + x for x in latest_list.top(10)]
+
+
+display_mode: Literal["native", "headless", "xvfb"] = "native"
+if args.headless:
+    display_mode = "headless"
 
 # Loads the default ManagerParams
 # and NUM_BROWSERS copies of the default BrowserParams
-
+NUM_BROWSERS = 1
 manager_params = ManagerParams(num_browsers=NUM_BROWSERS)
-browser_params = [BrowserParams(display_mode= sys.argv[2] ) for _ in range(NUM_BROWSERS)]
-
+browser_params = [BrowserParams(display_mode=display_mode) for _ in range(NUM_BROWSERS)]
 
 # Update browser configuration (use this for per-browser settings)
 for browser_param in browser_params:
     # Record HTTP Requests and Responses
-    browser_param.http_instrument = False
+    browser_param.http_instrument = True
     # Record cookie changes
     browser_param.cookie_instrument = False
     # Record Navigations
@@ -43,34 +61,41 @@ for browser_param in browser_params:
     # Record JS Web API calls
     browser_param.js_instrument = False
     # Record the callstack of all WebRequests made
-    browser_param.callstack_instrument = False
+    # browser_param.callstack_instrument = True
     # Record DNS resolution
     browser_param.dns_instrument = False
-    #hide_webdiver = False
+    # Set this value as appropriate for the size of your temp directory
+    # if you are running out of space
+    browser_param.maximum_profile_size = 50 * (10**20)  # 50 MB = 50 * 2^20 Bytes
 
-    # set useragent while calibration for identification at scheduler
-    if userAgent != "False":
-        browser_param.change_useragent = True
-        sys.stdout.write("useragent set to "+ userAgent)
-    
-    if proxy != "False":
-        browser_param.set_proxy = True
+    # Set custom preferences if provided
+    if args.useragent:
+        browser_param.prefs["general.useragent.override"] = args.useragent
+    if args.proxyhost and args.proxyport:
+        browser_param.prefs["network.proxy.type"] = 1
+        browser_param.prefs["network.proxy.ssl"] = args.proxyhost
+        browser_param.prefs["network.proxy.ssl_port"] = args.proxyport
+
+    # TODO temp preferences
+    browser_param.prefs["browser.cache.disk.enable"] = False
+    browser_param.prefs["browser.cache.memory.enable"] = False
 
 # Update TaskManager configuration (use this for crawl-wide settings)
-manager_params.data_directory = Path("./datadir/")
-manager_params.log_path = Path("./datadir/openwpm.log")
+#manager_params.data_directory = Path("./datadir/")
+#manager_params.log_path = Path("./datadir/openwpm.log")
 
-# memory_watchdog and process_watchdog are useful for large scale cloud crawls.
-# Please refer to docs/Configuration.md#platform-configuration-options for more information
-# manager_params.memory_watchdog = False
-# manager_params.process_watchdog = False
+data_directory = Path(args.crawldatapath)
+manager_params.data_directory = data_directory
+manager_params.log_path = data_directory / "openwpm.log" 
 
+waitingtime = args.waitingtime
 
 # Commands time out by default after 60 seconds
 with TaskManager(
     manager_params,
     browser_params,
-    SQLiteStorageProvider(Path("./datadir/crawl-data.sqlite")),
+    #SQLiteStorageProvider(Path("./datadir/crawl-data.sqlite")),
+    SQLiteStorageProvider(data_directory / "crawl-data.sqlite"),
     None,
 ) as manager:
     # Visits the sites
@@ -81,33 +106,32 @@ with TaskManager(
                 f"CommandSequence for {val} ran {'successfully' if success else 'unsuccessfully'}"
             )
 
- 	# signalize that browser is ready for visiting URL
-        sys.stdout.write("browserready")
-        
-        # Parallelize sites over all number of browsers set above.
-        command_sequence = CommandSequence(
-            site,
-            site_rank=index,
-            callback=callback,
-        )
-        
-        # wait for signal that all browsers are ready
-        while True:
-            line = sys.stdin.readline() 
-            if line == "visiturl\n":
+        # Signalize that browser is ready for visiting URL
+        sys.stdout.write("browserready\n")
+        sys.stdout.flush()
 
-                if waitingTime > 0:
-                    sys.stdout.write("waiting " + str(waitingTime) +" seconds before websitevisit")
-                    sleep(waitingTime)
+        # Wait for signal that all browsers are ready
+        while True:
+            line = sys.stdin.readline().strip()
+            if line == "visiturl":
+                if waitingtime > 0:
+                    sys.stdout.write(f"waiting {waitingtime} seconds before website visit\n")
+                    sys.stdout.flush()
+                    sleep(waitingtime)
 
                 # Start by visiting the page
-                command_sequence.append_command(GetCommand(url=site, sleep=1), timeout=30)
-                
-                command_sequence.append_command(writeDoneCommand())
+                command_sequence = CommandSequence(
+                    site,
+                    site_rank=index,
+                    callback=callback,
+                )
+                command_sequence.append_command(GetCommand(url=site, sleep=3), timeout=30)
+                sys.stdout.write(f"visiting {site} \n")
+
 
                 # Run commands across all browsers (simple parallelization)
                 manager.execute_command_sequence(command_sequence)
-                #manager.close(post_process)=False #my
-                #sys.stdout.write("urldone") #new
 
+                sys.stdout.write("urldone\n")
+                sys.stdout.flush()
                 break

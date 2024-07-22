@@ -4,8 +4,8 @@ const path = require('path');
 const configuration = {
 
 	base: {
-		master_addr: "http://192.168.178.49:3000", 		// e.g. "http://localhost:3000"
-		pagevisit_duration: 3								// specify time in seconds the browser stays on websites
+		master_addr: "http://192.168.178.83:3000", 		// e.g. "http://localhost:3000"
+		pagevisit_duration: 3							// specify time in seconds the browser stays on websites
 
 	},
 	puppeteer: {
@@ -18,21 +18,21 @@ const configuration = {
 
 		enable_proxy : true, 							// set false to disable mitmproxy
 		//har_destination : "/home/user/Schreibtisch/HTTP/puppeteer/",		// old
-		har_destination : "/home/" + process.env.USERNAME +"/Downloads/HTTP/", // e.g. "/home/user/http/"
+		har_destination : "/home/" + process.env.USERNAME +"/Downloads/Crawl-Data/", // e.g. "/home/user/http/"
 		proxy_host : "127.0.0.1",
 		proxy_port : "3031",
 	},
-	StealthyWPM: {
+	OpenWPM: {
 		client_name : "OpenWPM", 
 		headless : false,
 
 		crawl_script : "openwpm_synced.py", 
 		// script_path : "/home/user/Schreibtisch/StealthyWPM",
-		script_path : "/home/" + process.env.USERNAME +"/Desktop/OpenWPM", 
-
+		script_path : "/home/" + process.env.USERNAME +"/Downloads/OpenWPM", 
+		crawl_data_path: "/home/" + process.env.USERNAME +"/Downloads/Crawl-Data/",
 
 		enable_proxy : true,
-		har_destination : "/home/" + process.env.USERNAME +"/Downloads/HTTP/",
+		har_destination : "/home/" + process.env.USERNAME +"/Downloads/Crawl-Data/",
 		proxy_host : "127.0.0.1",
 		proxy_port : "3031",
 	}
@@ -40,7 +40,7 @@ const configuration = {
 
 const activeConfig = {
 	base : configuration.base,
-	worker : configuration.StealthyWPM // set worker
+	worker : configuration.OpenWPM // set worker
 	//worker : configuration.puppeteer 
 }
 

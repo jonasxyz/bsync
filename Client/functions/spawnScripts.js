@@ -4,102 +4,116 @@ var exkill = require("tree-kill");
 var fs = require('fs');
 
 const config = require("../config.js");
-const worker = config.worker;
+const worker = config.activeConfig.worker;
 
 
-var tempUrl;
 var childExists = false;
 var isCancelled = false;
 
 var crawlDir;
 var dirCreated = false;
+var dirTimestamp;
 
 module.exports =
 {
-    spawnCrawler: async function (url, proxyHost, userAgent, waitingTime, clearUrl) {
+    spawnCrawler: async function (config) {
 
-        tempUrl = url;
+        let { url, proxyHost, userAgent, waitingTime, clearUrl, headless } = config;
         fileformat = path.extname(worker.crawl_script);
 
         console.log("dircreated = ", dirCreated)
+
         if(!dirCreated) {
             crawlDir = await createDir();
         } 
 
+        //if(worker.enable_proxy==false) proxyHost = "False"; 
 
-        if(worker.enable_proxy==false) proxyHost = "False"; 
+    
 
-        if (fileformat === ".js") {
+                //'tcpdump', ["-s0", "-A 'tcp port 80 or tcp port 443'", "-w"+ worker.pcapng_destination + "pcapng/1.pcpapng" ]
 
-                    //'tcpdump', ["-s0", "-A 'tcp port 80 or tcp port 443'", "-w"+ worker.pcapng_destination + "pcapng/1.pcpapng" ]
+        // TODO Fix tcpdump especially for PoC        
+        if(worker.enable_tcpdump){ // additionally setting the enviroment variable for saving sslkeylogfile
 
-            if(worker.enable_tcpdump){ // additionally setting the enviroment variable for saving sslkeylogfile
+            //tcpdump = spawn( 'tcpdump', ["-s0", "-A 'tcp port 80 or tcp port 443'", "-w"+ worker.pcapng_destination + "pcapng/1.pcpapng"],{ shell: true, stdio: "pipe" });
+            //tcpdump = spawn( 'tcpdump', ["-s0 -A 'tcp port 80 or tcp port 443' -w", worker.pcapng_destination + "1.pcapng"],{ shell: true, stdio: "pipe", detached: true });
 
-                //tcpdump = spawn( 'tcpdump', ["-s0", "-A 'tcp port 80 or tcp port 443'", "-w"+ worker.pcapng_destination + "pcapng/1.pcpapng"],{ shell: true, stdio: "pipe" });
-                //tcpdump = spawn( 'tcpdump', ["-s0 -A 'tcp port 80 or tcp port 443' -w", worker.pcapng_destination + "1.pcapng"],{ shell: true, stdio: "pipe", detached: true });
+            let urlSaveDir = await createUrlDir(clearUrl);
 
-                let urlSaveDir = await createUrlDir(clearUrl);
-
-                //console.log("URLSAVENAME in sslkeylogfile: " + urlSaveDir  +"sslkeylogfileworker.log");
+            //console.log("URLSAVENAME in sslkeylogfile: " + urlSaveDir  +"sslkeylogfileworker.log");
 
 
-                //if(!dirCreated) currDir = await createDir() + "/" + clearUrl;
+            //if(!dirCreated) currDir = await createDir() + "/" + clearUrl;
 
-                // neuste aber klappt herade nicht
-                //tcpdump = spawn ( 'sudo tcpdump', ["-s0 -A 'tcp port 80 or tcp port 443' -w", worker.pcapng_destination + "1/" + clearUrl + "/url.pcapng"],{ shell: true, stdio: "pipe" })
-                browser = spawn( 'node', [
-                    worker.crawl_script, 
-                    url, 
-                    worker.headless, 
-                    proxyHost, 
-                    worker.proxy_port, 
-                    userAgent, 
-                    waitingTime],
-             { shell: true, env: {...process.env, SSLKEYLOGFILE: urlSaveDir  +"SSLKEYLOGFILE_" + clearUrl + ".log"}, 
-             cwd: worker.script_path, stdio: "pipe" });
+            // neuste aber klappt herade nicht
+            //tcpdump = spawn ( 'sudo tcpdump', ["-s0 -A 'tcp port 80 or tcp port 443' -w", worker.pcapng_destination + "1/" + clearUrl + "/url.pcapng"],{ shell: true, stdio: "pipe" })
+            browser = spawn( 'node', [
+                worker.crawl_script, 
+                url, 
+                worker.headless, 
+                proxyHost, 
+                worker.proxy_port, 
+                userAgent, 
+                waitingTime],
+            { shell: true, env: {...process.env, SSLKEYLOGFILE: urlSaveDir  +"SSLKEYLOGFILE_" + clearUrl + ".log"}, 
+            cwd: worker.script_path, stdio: "pipe" });
 
-            }else{
+        }else{
 
-                browser = spawn( 'node', [worker.crawl_script, url, worker.headless, proxyHost, worker.proxy_port, userAgent, waitingTime],
-             { cwd: worker.script_path, stdio: "pipe" }); // todo check detached
+            //browser = spawn( 'node', [worker.crawl_script, url, worker.headless, proxyHost, worker.proxy_port, userAgent, waitingTime],
+            //{ cwd: worker.script_path, stdio: "pipe" }); // todo check detached
+
+            // new config 15:14 15-07-24
+            let spawnArgs = [
+                worker.crawl_script,
+                "--url" , config.url,
+                "--waitingtime" , config.waitingTime
+            ];
+            console.log("PUPPETEER URL "+url)
+            if (worker.headless) {
+                spawnArgs.push("--headless");
+                console.log("SPAWNING HEADLESS BROWSER")
+            }
+            if (config.userAgent!="False"){
+                spawnArgs.push("--useragent", config.userAgent) // todo why not worker.client_name);
+            }
+            if (worker.enable_proxy){
+                spawnArgs.push("--proxyhost", worker.proxy_host);
+                spawnArgs.push("--proxyport", worker.proxy_port);
+            }
+        
+        
+            if (fileformat === ".js") {
+
+                browser = spawn( 'node', spawnArgs,{ 
+                    cwd: worker.script_path, 
+                    stdio: "pipe" }); // todo check detached
+
+                // console.log("SPAWN-STRING: ",'node', spawnArgs) // DEBUG
+            }else if (fileformat === ".py") {
+
+                spawnArgs.push("--crawldatapath", crawlDir+"/OpenWPMdata");
+
+                browser = spawn("conda run -n openwpm --no-capture-output python -u", spawnArgs, {
+                    shell: true,
+                    cwd: worker.script_path,
+                    stdio: "pipe",
+                    detached: true
+                });
+                // console.log("SPAWN-STRING: ","conda run -n openwpm --no-capture-output python -u", spawnArgs) // DEBUG
+                console.log("spawned .py childprocess");
+
+            }else {
+
+                console.error("Fileformat not supported.");
+                process.exit();
             }
             
-            console.log("spawned .js childprocess");
+        
             childExists = true;
             isCancelled = false;
-
-
-        } else if (fileformat === ".py") {
-            if (worker.headless == true) {
-
-                //browser = spawn("conda run -n openwpm --no-capture-output python -u", [worker.crawl_script, url, "headless", proxyHost, worker.proxy_port, userAgent, waitingTime],
-                // { shell: true, cwd: worker.script_path, stdio: "pipe", detached: true  });
-                //neu 21:33 14-07-24
-                browser = spawn("conda run -n openwpm --no-capture-output python -u", [worker.crawl_script, "--url " + url, "--headless", "--proxyhost " + proxyHost,
-                    "--proxyport " + worker.proxy_port, "--useragent" + userAgent, "--waitingtime" + waitingTime],
-                    { shell: true, cwd: worker.script_path, stdio: "pipe", detached: true  });
-
-            } else {
-
-                //browser = spawn("conda run -n openwpm --no-capture-output python -u", [worker.crawl_script, url, "native", proxyHost, worker.proxy_port, userAgent, waitingTime],
-                // { shell: true, cwd: worker.script_path, stdio: "pipe", detached: true });
-                browser = spawn("conda run -n openwpm --no-capture-output python -u", [worker.crawl_script, "--url " + url, "--proxyhost " + proxyHost,
-                    "--proxyport " + worker.proxy_port, "--useragent" + userAgent, "--waitingtime" + waitingTime],
-                    { shell: true, cwd: worker.script_path, stdio: "pipe", detached: true  });
-
-            }
-            console.log("spawned .py childprocess");
-            childExists = true;
-            isCancelled = false;
-
-
-        } else {
-
-            console.error("Fileformat not supported.");
-            process.exit();
         }
-
-
 
         // listener for child process
         browser.stdout.on("data", (data) => {
@@ -373,15 +387,33 @@ module.exports =
         var fileSaveDir = await createUrlDir(clearUrl);
         
         //console.log("URLSAVENAME in spawmproxyist: --set=hardump=" + fileSaveDir + replaceDotWithUnderscore(clearUrl) + ".har")
+        
+        let mitmNewHarCapabilities = true;
+
         try{ 
     
-            proxy = spawn("mitmdump", [
-                "--listen-host=" + worker.proxy_host,
-                "--listen-port=" + worker.proxy_port, 
-                "-s "+ __dirname+"/har_dump.py", 
-                "--set=hardump=" + fileSaveDir + replaceDotWithUnderscore(clearUrl) + ".har"],
-            {stdio: "pipe", shell: true});
-            //  " -s "+worker.script_location+"shutdown.py"
+            if(mitmNewHarCapabilities){
+                proxy = spawn("mitmdump", [
+                    "--listen-host=" + worker.proxy_host,
+                    "--listen-port=" + worker.proxy_port, 
+                    //"-s "+ __dirname+"/har_dump.py", 
+                    "--set=hardump=" + fileSaveDir + replaceDotWithUnderscore(clearUrl) + ".har"],
+                {stdio: "pipe", shell: true});
+                console.log("mitmdump", [
+                    "--listen-host=" + worker.proxy_host,
+                    "--listen-port=" + worker.proxy_port, 
+                    //"-s "+ __dirname+"/har_dump.py", 
+                    "--set=hardump=" + fileSaveDir + replaceDotWithUnderscore(clearUrl) + ".har"])
+            }else{
+                proxy = spawn("mitmdump", [
+                    "--listen-host=" + worker.proxy_host,
+                    "--listen-port=" + worker.proxy_port, 
+                    "-s "+ __dirname+"/har_dump.py", 
+                    "--set=hardump=" + fileSaveDir + replaceDotWithUnderscore(clearUrl) + ".har"],
+                {stdio: "pipe", shell: true});
+                //  " -s "+worker.script_location+"shutdown.py"
+            }
+            
         }
         catch (e) {
             console.log("Failed to spawn mitmproxy instance");
@@ -410,7 +442,7 @@ module.exports =
         })
         proxy.stdout.on("data", (data) => {
 
-            //console.log("proxy stdout: " + data);
+            console.log("proxy stdout: " + data);
         })
     }
 }
@@ -422,9 +454,11 @@ async function createDir() {
 
         const now = new Date();
         const dateString = now.toISOString().slice(0, 10);
-        const timeString = now.toLocaleTimeString().replace(/:/g, '-');
+        const timeString = now.toTimeString().split(' ')[0].replace(/:/g, '-');
+        const dirName = `${dateString}_${timeString}`+worker.client_name;
 
-        crawlDir = checkBackslash(config.worker.pcapng_destination) + `${dateString}:${timeString}`;
+        const crawlDir = checkBackslash(worker.har_destination) + dirName;
+        //crawlDirOpenWPM = checkBackslash(worker.har_destination) + dirName;
 
         
         fs.mkdir(crawlDir, { recursive: true }, (err) => {

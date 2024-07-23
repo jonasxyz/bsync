@@ -28,10 +28,10 @@ const configuration = {
 
 		crawl_script : "openwpm_synced.py", 
 		// script_path : "/home/user/Schreibtisch/StealthyWPM",
-		script_path : "/home/" + process.env.USERNAME +"/Downloads/OpenWPM", 
+		script_path : "/home/" + process.env.USERNAME +"/Desktop/OpenWPM", 
 		crawl_data_path: "/home/" + process.env.USERNAME +"/Downloads/Crawl-Data/",
 
-		enable_proxy : true,
+		enable_proxy : false,
 		har_destination : "/home/" + process.env.USERNAME +"/Downloads/Crawl-Data/",
 		proxy_host : "127.0.0.1",
 		proxy_port : "3031",

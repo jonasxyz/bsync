@@ -134,8 +134,10 @@ sudo update-ca-certificates
 
 echo "Installing npm package puppeteer..."
 if [ "$1" != "--no-puppeteer" ]; then
-	SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+	SCRIPT_DIR="$(dirname "$(readlink -f "$0")")" 
+	# SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" # some cases not working
+	echo "Installting npm packages in directory $SCRIPT_DIR"
 	sudo npm install
 
 	cd "$SCRIPT_DIR/puppeteer"
@@ -163,6 +165,9 @@ if [ "$1" != "--no-openwpm" ]; then
 
 	# Fixing occuring npm bug
 	sudo chown -R 1000:1000 "/home/user/.npm" # occurs at least with npm 10.8.2 and npm 10.7.0
+
+
+	eval "$(/home/$USER/mambaforge/bin/conda shell.bash hook)"
 
 	# micromamba activate /home/§USER/miniforge3 #OpenWPM still utilizing mambaforge
 	# micromamba activate /home/§USER/mambaforge # not working if not auto-initialized

@@ -4,6 +4,10 @@ from pathlib import Path
 from typing import Literal
 from time import sleep
 
+# Copy script into location after changes
+# TERMINAL: $(dirname "$(readlink -f "$0")")
+# cp /home/$USER/Downloads/bsync/Client/OpenWPM/openwpm_synced.py /home/$USER/Desktop/OpenWPM/
+
 import tranco
 
 from custom_command import LinkCountingCommand
@@ -76,7 +80,7 @@ for browser_param in browser_params:
         browser_param.prefs["network.proxy.ssl"] = args.proxyhost
         browser_param.prefs["network.proxy.ssl_port"] = args.proxyport
 
-    # TODO temp preferences
+     # TODO temp preferences
     browser_param.prefs["browser.cache.disk.enable"] = False
     browser_param.prefs["browser.cache.memory.enable"] = False
 
@@ -115,9 +119,9 @@ with TaskManager(
             line = sys.stdin.readline().strip()
             if line == "visiturl":
                 if waitingtime > 0:
-                    sys.stdout.write(f"waiting {waitingtime} seconds before website visit\n")
+                    sys.stdout.write(f"waiting {waitingtime} ms before website visit\n")
                     sys.stdout.flush()
-                    sleep(waitingtime)
+                    sleep(waitingtime / 1000)
 
                 # Start by visiting the page
                 command_sequence = CommandSequence(

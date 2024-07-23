@@ -15,6 +15,8 @@
 # Exit the script if any command fails
 set -e
 
+SCRIPT_DIR="$(dirname "$(realpath "$0")")"
+
 # Update and upgrade the system
 echo "Updating and upgrading the system..."
 sudo apt-get update -y && sudo apt-get upgrade -y
@@ -135,7 +137,7 @@ sudo update-ca-certificates
 echo "Installing npm package puppeteer..."
 if [ "$1" != "--no-puppeteer" ]; then
 
-	SCRIPT_DIR="$(dirname "$(readlink -f "$0")")" 
+	# SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"  TODO moved to front
 	# SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" # some cases not working
 	echo "Installting npm packages in directory $SCRIPT_DIR"
 	sudo npm install
@@ -184,10 +186,8 @@ if [ "$1" != "--no-openwpm" ]; then
 	# Paste bsync's crawl script to OpenWPM folder
 
 	# Determine the script's directory
-	WORKING_DIR="$(dirname "$(readlink -f "$0")")"
-	echo "Working directory is: $WORKING_DIR"
-	#cp $(pwd)/OpenWPM/openwpm_synced.py /home/$USER/Desktop/OpenWPM/ #not working
-	cp $WORKING_DIR/OpenWPM/openwpm_synced.py /home/$USER/Desktop/OpenWPM/ #funktioniert
+	echo "Script directory is: $SCRIPT_DIR"
+	cp $SCRIPT_DIR/OpenWPM/openwpm_synced.py /home/$USER/Desktop/OpenWPM/ # TODO Test
 	
 fi
 

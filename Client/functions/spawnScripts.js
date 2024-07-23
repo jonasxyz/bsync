@@ -13,6 +13,7 @@ var isCancelled = false;
 var crawlDir;
 var dirCreated = false;
 var dirTimestamp;
+var urlSaveDir
 
 module.exports =
 {
@@ -21,11 +22,7 @@ module.exports =
         let { url, proxyHost, userAgent, waitingTime, clearUrl, headless } = config;
         fileformat = path.extname(worker.crawl_script);
 
-        console.log("dircreated = ", dirCreated)
-
-        if(!dirCreated) {
-            crawlDir = await createDir();
-        } 
+        
 
         //if(worker.enable_proxy==false) proxyHost = "False"; 
 
@@ -366,6 +363,12 @@ module.exports =
 
     spawnProxy: async function (clearUrl) {
 
+        console.log("dircreated = ", dirCreated)
+
+        if(!dirCreated) {
+            crawlDir = await createDir();
+        } 
+
         //if(!dirCreated) await createDir();
 
         //console.log(clearUrl, "spawn clear URLL")
@@ -442,7 +445,7 @@ module.exports =
         })
         proxy.stdout.on("data", (data) => {
 
-            console.log("proxy stdout: " + data);
+            // console.log("proxy stdout: " + data); // DEBUG Show proxy HTTP requests
         })
     }
 }

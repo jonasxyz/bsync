@@ -51,7 +51,7 @@ if (proxyhost && proxyport) {
 
             if (waitingtime > 0) {
                 console.log(`waiting ${waitingtime} s`);
-                await new Promise(resolve => setTimeout(resolve, waitingtime*1000));
+                await new Promise(resolve => setTimeout(resolve, waitingtime));
             }
 
             console.log(`visiting ${url}`);

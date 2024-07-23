@@ -5,7 +5,7 @@
 # requirements and automation framework setup
 
 # Following components will be installed: curl, nodejs, npm: socket.io-client and puppeteer,
-# python3, python3-pip, mitmproxy, OpenWPM, p11-kit, g++, make, gcc, bison, patchelf, gawk
+# python3, python3-pip, mitmproxy, OpenWPM, p11-kit, g++, make, gcc bison, patchelf, gawk
 
 # Arguments:
 # --no-puppeteer: Doesn't install and configure OpenWPM
@@ -79,9 +79,11 @@ else
 
 
 	elif [[ "$(printf '%s\n' "$ubuntu_version" "18.04" | sort -V | head -n1)" == "18.04" ]]; then
+
 		echo "Ubuntu version is newer than 18.04. Installing Latest Node.js LTS release"
 		curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
 		sudo apt-get install -y nodejs
+		
 	else
 		echo "Ubuntu version is older than 18.04"
 	fi
@@ -95,16 +97,19 @@ cd /home/$USER/Downloads
 #curl -L -O "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$(uname)-$(uname -m).sh"
 #bash Miniforge3-$(uname)-$(uname -m).sh
 
-# todo openwpm install-mamba script takes mambaforge
-echo "Installing Mamba... openwpm way"
+echo "Installing Mamba... OpenWPMs way" # mambaforge instead of miniforge3
 curl -L -O "https://github.com/conda-forge/miniforge/releases/latest/download/Mambaforge-$(uname)-$(uname -m).sh" #-O mamba.sh;
 bash Mambaforge-$(uname)-$(uname -m).sh
 #source "$HOME/mamba/etc/profile.d/conda.sh"
-conda config --set auto_activate_base true
+
 echo "Restarting Shell..."
 source ~/.bashrc
 eval "$(/home/$USER/mambaforge/bin/conda shell.bash hook)"
+conda config --set auto_activate_base true
 conda init
+
+# Clean up downloaded mamba installer
+rm Mambaforge-$(uname)-$(uname -m).sh
 
 # Install latest Python version and pip
 echo "Installing Python and pip..."
@@ -150,16 +155,14 @@ fi
 
 if [ "$1" != "--no-openwpm" ]; then
 
-	# Install make and gcc ...
-	sudo apt-get install -y make gcc
-
-	
-
 	echo "Cloning and installing OpenWPM..."
 	cd /home/$USER/Desktop/
 	git clone https://github.com/openwpm/OpenWPM.git
 	# git clone https://github.com/openwpm/OpenWPM.git -- branch v0.28.0 # check v0.29.0 compatibility
 	cd OpenWPM
+
+	# Fixing occuring npm bug
+	sudo chown -R 1000:1000 "/home/user/.npm" # occurs at least with npm 10.8.2 and npm 10.7.0
 
 	# micromamba activate /home/§USER/miniforge3 #OpenWPM still utilizing mambaforge
 	# micromamba activate /home/§USER/mambaforge # not working if not auto-initialized
@@ -173,12 +176,13 @@ if [ "$1" != "--no-openwpm" ]; then
 	sudo mv /home/$USER/Desktop/OpenWPM/firefox-bin/libnssckbi.so /home/$USER/Desktop/OpenWPM/firefox-bin/libnssckbi.so.bak
 	sudo ln -s /usr/lib/x86_64-linux-gnu/pkcs11/p11-kit-trust.so /home/$USER/Desktop/OpenWPM/firefox-bin/libnssckbi.so
 
-	Paste bsync's crawl script to OpenWPM folder
-	# todo add configure firefox.py deploy.. config.py ..
+	# Paste bsync's crawl script to OpenWPM folder
+
 	# Determine the script's directory
-	# WORKING_DIR="$(dirname "$(readlink -f "$0")")"
-	# echo "Working directory is: $WORKING_DIR"
-	cp $(pwd)/OpenWPM/openwpm_synced.py /home/$USER/Desktop/OpenWPM/ #funktioniert
+	WORKING_DIR="$(dirname "$(readlink -f "$0")")"
+	echo "Working directory is: $WORKING_DIR"
+	#cp $(pwd)/OpenWPM/openwpm_synced.py /home/$USER/Desktop/OpenWPM/ #not working
+	cp $WORKING_DIR/OpenWPM/openwpm_synced.py /home/$USER/Desktop/OpenWPM/ #funktioniert
 	
 fi
 

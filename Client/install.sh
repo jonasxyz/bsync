@@ -74,6 +74,10 @@ else
 		sudo apt install -y patchelf
 		sudo patchelf --set-interpreter /opt/glibc-2.28/lib/ld-linux-x86-64.so.2 --set-rpath /opt/glibc-2.28/lib/:/lib/x86_64-linux-gnu/:/usr/lib/x86_64-linux-gnu/ /usr/local/bin/node
 
+		# Todo check if npm update works
+		sudo npm install npm -g
+
+
 	elif [[ "$(printf '%s\n' "$ubuntu_version" "18.04" | sort -V | head -n1)" == "18.04" ]]; then
 		echo "Ubuntu version is newer than 18.04. Installing Latest Node.js LTS release"
 		curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
@@ -84,13 +88,31 @@ else
 fi
 node --version
 
+
+# Install and activate Mamba as Conda replacement
+cd /home/$USER/Downloads
+#echo "Installing Mamba..."
+#curl -L -O "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$(uname)-$(uname -m).sh"
+#bash Miniforge3-$(uname)-$(uname -m).sh
+
+# todo openwpm install-mamba script takes mambaforge
+echo "Installing Mamba... openwpm way"
+curl -L -O "https://github.com/conda-forge/miniforge/releases/latest/download/Mambaforge-$(uname)-$(uname -m).sh" #-O mamba.sh;
+bash Mambaforge-$(uname)-$(uname -m).sh
+#source "$HOME/mamba/etc/profile.d/conda.sh"
+conda config --set auto_activate_base true
+echo "Restarting Shell..."
+source ~/.bashrc
+eval "$(/home/$USER/mambaforge/bin/conda shell.bash hook)"
+conda init
+
 # Install latest Python version and pip
 echo "Installing Python and pip..."
 sudo apt-get install -y python3 python3-pip
 
 # Install mitmproxy using pip
 echo "Installing mitmproxy..."
-pip3 install mitmproxy # --break-system-packages # allow system-wide installation
+sudo pip3 install mitmproxy # --break-system-packages # allow system-wide installation
 
 # Start mitmproxy for CA certificate generation
 echo "Starting mitmproxy"
@@ -107,9 +129,10 @@ sudo update-ca-certificates
 
 echo "Installing npm package puppeteer..."
 if [ "$1" != "--no-puppeteer" ]; then
-	sudo npm install -g puppeteer
-
 	SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+	sudo npm install
+
 	cd "$SCRIPT_DIR/puppeteer"
 	
 	echo "Start puppeteer for generating CA cert destination "
@@ -130,22 +153,7 @@ if [ "$1" != "--no-openwpm" ]; then
 	# Install make and gcc ...
 	sudo apt-get install -y make gcc
 
-	# Install and activate Mamba as Conda replacement
-	#echo "Installing Mamba..."
-	#curl -L -O "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$(uname)-$(uname -m).sh"
-	#bash Miniforge3-$(uname)-$(uname -m).sh
-
-	# todo openwpm install-mamba script takes mambaforge
-	echo "Installing Mamba... openwpm way"
-	curl -L -O "https://github.com/conda-forge/miniforge/releases/latest/download/Mambaforge-$(uname)-$(uname -m).sh" #-O mamba.sh;
-	#bash mamba.sh -b -p $HOME/mamba
-	bash Mambaforge-$(uname)-$(uname -m).sh
-	#source "$HOME/mamba/etc/profile.d/conda.sh"
-
-	echo "Restarting Shell..."
-	source ~/.bashrc
-	eval "$(/home/$USER/mambaforge/bin/conda shell.bash hook)"
-	conda init
+	
 
 	echo "Cloning and installing OpenWPM..."
 	cd /home/$USER/Desktop/

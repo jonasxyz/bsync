@@ -90,6 +90,9 @@ module.exports =
                 // console.log("SPAWN-STRING: ",'node', spawnArgs) // DEBUG
             }else if (fileformat === ".py") {
 
+                if(!dirCreated) { // directory for OpenWPMs captured files
+                    crawlDir = await createDir();
+                } 
                 spawnArgs.push("--crawldatapath", crawlDir+"/OpenWPMdata");
 
                 browser = spawn("conda run -n openwpm --no-capture-output python -u", spawnArgs, {

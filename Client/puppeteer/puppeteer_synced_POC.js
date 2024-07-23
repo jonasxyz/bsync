@@ -25,7 +25,7 @@ if (proxyhost && proxyport) {
     proxyArg = `--proxy-server=${proxyhost}:${proxyport}`;
     console.log(`Proxy set to ${proxyhost}:${proxyport}`); //this should get printed
 } else {
-    console.log("Proxy not set. proxyhost or proxyport missing");
+    // console.log("Proxy not set. proxyhost or proxyport missing"); //DEBUG
 }
 
 (async () => {
@@ -43,29 +43,29 @@ if (proxyhost && proxyport) {
     }
 
     // Send signal that browser is ready for visiting website
-    process.stdout.write("browserready");
+    await process.stdout.write("browserready");
+    console.log(`but not waiting`);
 
-    process.stdin.on("data", async (data) => {
-        if (data.toString().includes("visiturl")) {
-            console.log("All browsers ready");
 
-            if (waitingtime > 0) {
-                console.log(`waiting ${waitingtime} ms`);
-                await new Promise(resolve => setTimeout(resolve, waitingtime));
-            }
+       
 
-            console.log(`visiting ${url}`);
-            await page.goto(url);
+    if (waitingtime > 0) {
+        console.log(`waiting ${waitingtime} ms`);
+        await new Promise(resolve => setTimeout(resolve, waitingtime));
+    }
 
-            await waitOnSite(3);
+    console.log(`visiting ${url}`);
+    await page.goto(url);
 
-            await browser.close();
+    await waitOnSite(1);
 
-            process.stdout.write("urldone");
+    await browser.close();
 
-            process.exit();
-        }
-    });
+    await process.stdout.write("urldone");
+
+    process.exit();
+        
+    
 
 })();
 

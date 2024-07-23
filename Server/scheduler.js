@@ -210,8 +210,8 @@ io.on("connection", socket => {
 
     socket.on("browserfinished", async (data) => {
 
-        if (activeClients != config.num_clients || ongoingCrawl == false || browsersReady != config.num_clients ) return;  //|| awaiting != "browserfinished"
-
+        if (activeClients != config.num_clients || ongoingCrawl == false  ) return;  //|| awaiting != "browserfinished"
+        // removed || browsersReady != config.num_clients // vmedit 17:21 23-07-24
 
         // triggered everytime one browser finished while crawling
 
@@ -474,7 +474,9 @@ io.on("connection", socket => {
 
         console.log("\n--------------------------------------------------------------------------------------------------------------\n")
 
-        if(calibrationDone) console.log("\x1b[33mSTATUS: \x1b[0m" + "URL#"+ (urlsDone+1) + " sent " + tempUrl);
+        if(calibration == false) console.log("\x1b[33mSTATUS: \x1b[0m" + "URL#"+ (urlsDone+1) + " sent " + tempUrl);
+
+        // if(calibrationDone) console.log("\x1b[33mSTATUS: \x1b[0m" + "URL#"+ (urlsDone+1) + " sent " + tempUrl); // vmedit 16:09 23-07-24
         else console.log("\x1b[33mSTATUS: \x1b[0m" + "calibration#" + (testsDone+1) + " sent to all workers"); 
 
         //changed added timeout
@@ -508,7 +510,11 @@ io.on("connection", socket => {
             if (c == 'y' || c == 'yes') {
                 if (operation == "calibration" && isAnswered==false) sendUrl(true); // start testing accesstime to  master webserver for calibration
                       
-                if (operation == "crawl" && isAnswered==false) sendUrl(false);
+                if (operation == "crawl" && isAnswered==false){
+                    sendUrl(false);
+                    calibrationDone = true; // vmedit skipcalibration
+                    initCalibrationDone = true;
+                } 
                 isAnswered=true; // avoid bufferd interface questions when client loses connection while question is active
                 return;
 

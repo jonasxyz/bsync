@@ -1,0 +1,17 @@
+CLIENT       ,READY AFTER(MS) ,REQUEST AFTER(MS) ,WATINGTIME(MS) ,AVERAGE_DIFFERENCE ,FILENAME
+OpenWPM      ,        5657.04 ,          6515.61 ,          0.0  ,            858.57 ,TESTCRAWL3_2024-07-25.csv
+OpenWPM_HL   ,        4429.44 ,          6498.83 ,         62.0  ,            841.79 ,TESTCRAWL3_2024-07-25.csv
+puppeteer    ,        1225.69 ,          6384.58 ,        718.0  ,            727.54 ,TESTCRAWL3_2024-07-25.csv
+puppeteer_HL ,         856.93 ,          6390.36 ,        723.0  ,            733.32 ,TESTCRAWL3_2024-07-25.csv
+OpenWPM      ,        5699.93 ,          6521.74 ,         11.0  ,            821.81 ,TESTCRAWL_2024-07-24.csv
+OpenWPM_HL   ,        4498.31 ,          6476.32 ,          0.0  ,            776.39 ,TESTCRAWL_2024-07-24.csv
+puppeteer    ,        1230.14 ,          6407.12 ,        694.0  ,            707.19 ,TESTCRAWL_2024-07-24.csv
+puppeteer_HL ,         849.48 ,          6403.33 ,        693.0  ,            703.4  ,TESTCRAWL_2024-07-24.csv
+OpenWPM      ,        5630.36 ,          6479.75 ,          0.0  ,            849.39 ,TESTCRAWL_2024-07-25.csv
+OpenWPM_HL   ,        4418.62 ,          6483.33 ,        108.0  ,            852.97 ,TESTCRAWL_2024-07-25.csv
+puppeteer    ,        1237.74 ,          6452.71 ,        811.0  ,            822.35 ,TESTCRAWL_2024-07-25.csv
+puppeteer_HL ,         807.9  ,          6455.17 ,        814.0  ,            824.81 ,TESTCRAWL_2024-07-25.csv
+OpenWPM      ,           5.66 ,             6.51 ,          0.0  ,              0.84 ,Overall_Average
+OpenWPM_HL   ,           4.45 ,             6.49 ,          0.06 ,              0.82 ,Overall_Average
+puppeteer    ,           1.23 ,             6.41 ,          0.74 ,              0.75 ,Overall_Average
+puppeteer_HL ,           0.84 ,             6.42 ,          0.74 ,              0.75 ,Overall_Average

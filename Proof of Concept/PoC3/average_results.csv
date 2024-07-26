@@ -1,0 +1,29 @@
+File            ,Client       ,Average Request After (MS) ,Average Iteration Diff (MS) ,Overall Average Request After (S)
+TESTCRAWL2.csv  ,OpenWPM      ,                   6644.13 ,5410.2                      ,                              
+TESTCRAWL2.csv  ,OpenWPM_HL   ,                   6768.64 ,5410.2                      ,                              
+TESTCRAWL2.csv  ,puppeteer    ,                   1707.81 ,5410.2                      ,                              
+TESTCRAWL2.csv  ,puppeteer_HL ,                   1478.25 ,5410.2                      ,                              
+TESTCRAWL3.csv  ,OpenWPM      ,                   6606.3  ,5320.31                     ,                              
+TESTCRAWL3.csv  ,OpenWPM_HL   ,                   6664.95 ,5320.31                     ,                              
+TESTCRAWL3.csv  ,puppeteer    ,                   1663.52 ,5320.31                     ,                              
+TESTCRAWL3.csv  ,puppeteer_HL ,                   1479.32 ,5320.31                     ,                              
+TESTCRAWL_1.csv ,OpenWPM      ,                   6664.11 ,5367.18                     ,                              
+TESTCRAWL_1.csv ,OpenWPM_HL   ,                   6762.1  ,5367.18                     ,                              
+TESTCRAWL_1.csv ,puppeteer    ,                   1726.36 ,5367.18                     ,                              
+TESTCRAWL_1.csv ,puppeteer_HL ,                   1498.66 ,5367.18                     ,                              
+TESTCRAWL_4.csv ,OpenWPM      ,                   6622.78 ,5343.29                     ,                              
+TESTCRAWL_4.csv ,OpenWPM_HL   ,                   6674.61 ,5343.29                     ,                              
+TESTCRAWL_4.csv ,puppeteer    ,                   1699.65 ,5343.29                     ,                              
+TESTCRAWL_4.csv ,puppeteer_HL ,                   1449.28 ,5343.29                     ,                              
+TESTCRAWL_5.csv ,OpenWPM      ,                   6574.06 ,5296.89                     ,                              
+TESTCRAWL_5.csv ,OpenWPM_HL   ,                   6656.61 ,5296.89                     ,                              
+TESTCRAWL_5.csv ,puppeteer    ,                   1684.17 ,5296.89                     ,                              
+TESTCRAWL_5.csv ,puppeteer_HL ,                   1454.93 ,5296.89                     ,                              
+TESTCRAWL_6.csv ,OpenWPM      ,                   6593.04 ,5230.81                     ,                              
+TESTCRAWL_6.csv ,OpenWPM_HL   ,                   6600.27 ,5230.81                     ,                              
+TESTCRAWL_6.csv ,puppeteer    ,                   1658.03 ,5230.81                     ,                              
+TESTCRAWL_6.csv ,puppeteer_HL ,                   1505.15 ,5230.81                     ,                              
+Overall         ,OpenWPM      ,                   6620.0  ,Average                     ,                             6.62
+Overall         ,OpenWPM_HL   ,                   6690.0  ,Average                     ,                             6.69
+Overall         ,puppeteer    ,                   1690.0  ,Average                     ,                             1.69
+Overall         ,puppeteer_HL ,                   1480.0  ,Average                     ,                             1.48

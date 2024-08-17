@@ -191,4 +191,14 @@ if [ "$1" != "--no-openwpm" ]; then
 	
 fi
 
+# devtools
+# sudo apt install openssh-server
+# sudo systemctl start ssh
+# sudo systemctl enable ssh
+# sudo nano /etc/ssh/sshd_config
+# sudo ufw allow ssh
+# sudo ufw enable
+# sudo systemctl restart ssh
+
+
 echo "All installations are complete!"

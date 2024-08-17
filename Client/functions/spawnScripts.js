@@ -447,6 +447,11 @@ module.exports =
                 socket.emit("browserfinished");
                 console.log("\x1b[36mSOCKETIO:\x1b[0m Sending browserfinished");
 
+                if (fs.existsSync(fileSaveDir + replaceDotWithUnderscore(clearUrl) + ".har")) {
+                    console.log("Proxy generated HAR file in directory:", fileSaveDir);
+                } else {
+                    console.log("Proxy failed to generate file in directory:", fileSaveDir);
+                }
             } 
         })
         proxy.stdout.on("data", (data) => {

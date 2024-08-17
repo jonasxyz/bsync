@@ -154,3 +154,4 @@ Client/config.json
 Client/config.json
 Client/puppeteer/puppeteer_synced copy.js
 Client/config.json
+Server/deploy.sh

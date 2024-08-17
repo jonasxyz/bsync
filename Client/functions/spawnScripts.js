@@ -141,10 +141,12 @@ module.exports =
         browser.stderr.on("data", (err) => {
             var err1 = err.toString();
             console.log(err1);
+            console.log("\x1b[33mBROWSER: \x1b[0m" + "stderr Error: " + err1);
+
             socket.emit("scripterror", err1);
         })
         browser.on("console.error();", (data) => {
-            console.log("\x1b[33mBROWSER: \x1b[0m" + "Error: " + data);
+            console.log("\x1b[33mBROWSER: \x1b[0m" + "console Error: " + data);
 
         })
         browser.on("close", async (data) => {
@@ -184,6 +186,7 @@ module.exports =
             }else {
 
                 console.log("else close kommt")
+                console.log("isCanceled=",isCancelled)
                 if(!isCancelled){
                     socket.emit("browserfinished");
                     console.log("\x1b[36mSOCKETIO:\x1b[0m Sending browserfinished");
@@ -210,8 +213,8 @@ module.exports =
         console.log("Killing child processes");
         try {
             //if (fileformat === ".js") process.kill(-browser.pid); //browser.kill("SIGINT");
-            if (fileformat === ".js") browser.kill("SIGINT");
-            if (fileformat === ".py") process.kill(-browser.pid);
+            if (fileformat === ".js") await browser.kill("SIGINT");
+            if (fileformat === ".py") await process.kill(-browser.pid); //vmedit add await
 
             if (worker.enable_proxy) exkill(proxy.pid);
             //if (worker.enable_proxy) proxy.kill("SIGINT");

@@ -89,6 +89,9 @@ module.exports ={
             element.requestArray =[];
             element.doneArray =[];
             element.maxDelayArray =[];
+            element.errorArray =[];
+            element.browserFinishedArray =[];
+
             if(calibrationDone) element.waitingTimeArray =[];
             
         });

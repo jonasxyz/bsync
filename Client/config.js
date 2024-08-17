@@ -12,7 +12,7 @@ const configuration = {
 		client_name: "puppeteer_HL", 						// must be unique
 		headless: true,
 
-		crawl_script: "puppeteer_synced_POC.js", 
+		crawl_script: "puppeteer_synced.js", 
 		script_path: __dirname + "/puppeteer",
 
 		enable_proxy : false, 							// set false to disable mitmproxy
@@ -22,10 +22,10 @@ const configuration = {
 		proxy_port : "3031",
 	},
 	OpenWPM: {
-		client_name : "OpenWPM_poc", 
-		headless : false,
+		client_name : "OpenWPM", 
+		headless : true,
 
-		crawl_script : "openwpm_synced_POC.py", 
+		crawl_script : "openwpm_synced.py", 
 		// script_path : "/home/user/Schreibtisch/StealthyWPM",
 		script_path : "/home/" + process.env.USERNAME +"/Desktop/OpenWPM", 
 		crawl_data_path: "/home/" + process.env.USERNAME +"/Downloads/Crawl-Data/",

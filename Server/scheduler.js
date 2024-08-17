@@ -13,6 +13,7 @@ var server = app.listen(config.port, () => console.log("Server listening on port
 
 var io = require("socket.io")(server);
 
+process.env.TZ = 'Europe/Amsterdam'; // DEBUG
 
 
 // todo vielleicht estimatedRequest hinzufügen 
@@ -30,9 +31,9 @@ var testsDone = 0;
 var browsersReady = 0;
 var pendingJobs  = 0;
 var myPromise;
-// zwei gleiche crawler http informationen vergleichen
 
-var urlList= fs.readFileSync("./"+config.url_list).toString().split("\r\n"); // create array with one element out of each line
+//var urlList= fs.readFileSync("./"+config.url_list).toString().split("\r\n"); // create array with one element out of each line
+var urlList = fs.readFileSync("./" + config.url_list, 'utf8').split('\r\n').filter(line => line.trim() !== ''); //vmedit
 
 var calibrationDone = false;
 var initCalibrationDone = false;
@@ -96,8 +97,8 @@ io.on("connection", socket => {
         logFunctions.logConnect(clientname, new Date().toISOString());
 
       
-        arrayClients.push({ workerName: socket.data.clientname, socketId: socket.id, dateArray: [], readyArray: [], requestArray: [], doneArray: [], maxDelayArray: [], avgDelay: 0, waitMs: 0, avgDone: 0, offsetDone: 0});
-        arrayStatistics.push({ workerName: socket.data.clientname, socketId: socket.id, dateArray: [], readyArray: [], waitingTimeArray: [], requestArray: [], doneArray: [], maxDelayArray: [] });
+        arrayClients.push({ workerName: socket.data.clientname, socketId: socket.id, dateArray: [], readyArray: [], requestArray: [], doneArray: [], browserFinishedArray: [] , maxDelayArray: [], avgDelay: 0, waitMs: 0, avgDone: 0, offsetDone: 0});
+        arrayStatistics.push({ workerName: socket.data.clientname, socketId: socket.id, dateArray: [], readyArray: [], waitingTimeArray: [], requestArray: [], doneArray: [], browserFinishedArray: [] , maxDelayArray: [] , errorArray: []});
  
         console.log("INFO: " + "Client "+clientname + " connected. "+ activeClients+ "/" + config.num_clients+" clients connected to start crawl");
 
@@ -132,7 +133,7 @@ io.on("connection", socket => {
 
         tempId = helperFunctions.searchArray(arrayClients, socket.id.toString(), 2);
         testsDone = pingOkay = pendingJobs = 0;
-        calibrationDone = false;
+        if(config.re_calibration_dc) calibrationDone = false;
         activeClients-=1;
 
         clearTimeout(browserReadyCountdown);
@@ -192,7 +193,24 @@ io.on("connection", socket => {
     
     socket.on("scripterror", (data)=> {
         console.log("\x1b[31mERROR: " + "Error at "+ socket.data.clientname+ " while executing crawl script","\x1b[0m");
-         console.log(data); //debug
+         console.log(data); //debug errormsg
+         if (calibrationDone){
+            let arrayPosition = helperFunctions.searchArray(calibrationDone ? arrayStatistics : arrayClients, socket.data.clientname.toString(), 1);;
+            calibrationDone ? (tempArray = arrayStatistics) : (tempArray = arrayClients);
+            try {
+                var errorLine = data.split('\n').find(line => line.startsWith('Error:')).trim();
+                console.log("1errorLine=",errorLine); //debug errormsg
+
+                //const errorDetailsLine = errorString.split('\n')[errorString.split('\n').indexOf(errorLine) + 1].trim();
+                //console.log("2errorDetail=",errorDetailsLine); //debug errormsg
+
+            } catch (error) {
+                errorLine = "unknown error";
+            }
+            
+            tempArray[arrayPosition].errorArray.push(errorLine); // log first line of errormessage //vmedit todo check for other error and openwpm
+
+         }
     })
 
     socket.on("urlcrawled", (data) => {
@@ -204,14 +222,17 @@ io.on("connection", socket => {
 
         //insert time from sending url to receiving urlDone into statistics 
         tempArray[arrayPosition].doneArray.push((dateUrlDone - timeUrlSent));
-        console.log ("pushed " + (dateUrlDone - timeUrlSent)) 
+        //console.log ("pushed " + (dateUrlDone - timeUrlSent));
+
+
+        
         
     })
 
     socket.on("browserfinished", async (data) => {
 
-        if (activeClients != config.num_clients || ongoingCrawl == false  ) return;  //|| awaiting != "browserfinished"
-        // removed || browsersReady != config.num_clients // vmedit 17:21 23-07-24
+        if (activeClients != config.num_clients || ongoingCrawl == false || browsersReady != config.num_clients ) return;  //|| awaiting != "browserfinished"
+        // removed || browsersReady != config.num_clients // vmedit 17:21 23-07-24 auch 21:38 25-07-24
 
         // triggered everytime one browser finished while crawling
 
@@ -226,9 +247,15 @@ io.on("connection", socket => {
 
         //insert time from sending url to receiving urlDone into statistics 
         //tempArray[arrayPosition].doneArray.push((dateUrlDone - timeUrlSent));
-        let tempDateUrlDone = tempArray[arrayPosition].doneArray[tempIterations];
+        
+        var tempDateUrlDone = tempArray[arrayPosition].doneArray[tempIterations];
 
-        console.log(tempDateUrlDone +" MINUS " + timeUrlSent)
+        //console.log(tempDateUrlDone +" MINUS " + timeUrlSent) // DEBUG
+        
+        let dateBrowserFinsihed = Date.now(); //vmedit add browserfinished log
+
+        tempArray[arrayPosition].browserFinishedArray.push((dateBrowserFinsihed - timeUrlSent));
+
 
 
         // neuoktober browser closed but didnt send urlcrawled signal
@@ -236,10 +263,10 @@ io.on("connection", socket => {
 
             let MissingUrlCrawled = true;
             tempDateUrlDone = -1;
-            console.log("\x1b[31mERROR: " + socket.data.clientname.toString() + " timed out visiting URL....", "\x1b[0m");
+            console.log("\x1b[31mERROR: " + socket.data.clientname.toString() + " error visiting URL....", "\x1b[0m");
 
-            console.log("neue funktion timeout urldone fehlt");
-            browserDoneTimeout(true);   
+            // console.log("neue funktion timeout urldone fehlt");
+            //browserDoneTimeout(true);   // VMEDIT dont kill all browsers if that happens
         } 
 
 
@@ -248,7 +275,8 @@ io.on("connection", socket => {
             // todo ? eigentlich nur bei testrun oder calibration
 
             console.log("\x1b[34mURLDONE:\x1b[0m",  tempArray[arrayPosition].workerName , " URL done signal \x1b[34m",
-                    ( tempDateUrlDone -  tempArray[arrayPosition].requestArray[tempIterations]) , "ms\x1b[0m after receiving request");
+                    ( tempDateUrlDone -  tempArray[arrayPosition].requestArray[tempIterations]) , "ms\x1b[0m after receiving request"
+                    + " \x1b[36m" , (tempDateUrlDone - timeUrlSent ) + "\x1b[0m ms after starting iteration. "); //VMEDIT
 
             // console.log( (dateUrlDone - timeUrlSent) - tempArray[arrayPosition].requestArray[tempIterations] , " " , dateUrlDone , " - " , tempArray[arrayPosition].requestArray[tempIterations] ); //debug
 
@@ -265,13 +293,21 @@ io.on("connection", socket => {
 
                 tempArray[arrayPosition].dateArray.push(new Date(tempDateUrlDone + timeUrlSent).toISOString()); 
 
-                console.log("\x1b[34mCRAWLED:\x1b[0m", arrayClients[calibrationArrayPosition].workerName , "crawled URL", tempUrl , "finished\x1b[34m",
-                tempDateUrlDone , "ms\x1b[0m after distribtung URL");
+                var estimatedRequest;
+                if(tempDateUrlDone == undefined ||tempDateUrlDone == -1 ){ // vmedit undefined if not done
+                    estimatedRequest = undefined;
 
-                let estimatedRequest = tempDateUrlDone  - arrayClients[calibrationArrayPosition].offsetDone;
+                }else{
+                    estimatedRequest = tempDateUrlDone  - arrayClients[calibrationArrayPosition].offsetDone;
+
+                }    
+
                 // console.log ((dateUrlDone - timeUrlSent) , " minus " + arrayClients[calibrationArrayPosition].offsetDone , " gleich " , estimatedRequest ); //debug
                 tempArray[arrayPosition].requestArray.push(estimatedRequest);
 
+
+                console.log("\x1b[34mCRAWLED:\x1b[0m", arrayClients[calibrationArrayPosition].workerName , "crawled URL", tempUrl , "finished\x1b[34m",
+                tempDateUrlDone , "ms\x1b[0m after distributing URL. Estimated Request\x1b[34m ",estimatedRequest , "ms\x1b[0m after distribution");
 
             }            
 
@@ -363,7 +399,7 @@ io.on("connection", socket => {
                 io.sockets.emit("close", "finished");
                 process.exit();
 
-            } else if (urlsDone % config.re_calibration == 0) { // recalibrate after number of website crawled 
+            } else if (config.re_calibration != 0 && urlsDone % config.re_calibration == 0) { // recalibrate after number of website crawled 
 
                 console.log("\x1b[33mSTATUS: \x1b[0m" + "\x1b[32m", "Starting recalibration...", "\x1b[0m")
                 calibrationDone = false;
@@ -464,6 +500,8 @@ io.on("connection", socket => {
             else {
                 preTempUrl = urlList[urlsDone].toString();
                 tempUrl = preTempUrl.slice(preTempUrl.indexOf(",") + 1);
+                logFunctions.newUrl(tempUrl, urlsDone+1, new Date().toISOString());
+
             }
 
 
@@ -529,7 +567,7 @@ io.on("connection", socket => {
     //todo der der austimet behält zombie child
     function browserDoneTimeout(alreadyClosed){
 
-        console.log("BrowserdoneTimeour triggered..")
+        console.log("BrowserdoneTimeout triggered..")
 
         let tempId;
         let tempName;
@@ -554,7 +592,7 @@ io.on("connection", socket => {
         
 
         console.log("\x1b[31mERROR: " + "Client " + tempName + " browser timed out while visiting URL...\nKilling all browsers.", "\x1b[0m");
-
+        
 
         doneTimeoutCounter += 1;
 
@@ -568,6 +606,7 @@ io.on("connection", socket => {
 
 
             //io.sockets.emit("killchildprocess", "timeout");
+            logFunctions.logTimeout(tempName, new Date().toISOString(), doneTimeoutCounter, urlsDone+1);
 
             console.log("\x1b[33mSTATUS: \x1b[0m" + "Skipping url#" + urlsDone + " " + tempUrl + " after failing to crawl " + (config.website_attempts) + " times.");
             logFunctions.skipUrl(tempUrl.toString(), urlsDone, new Date().toISOString());
@@ -702,7 +741,7 @@ app.get('/', async function (req, res) {
 
     if (activeClients != config.num_clients || ongoingCrawl == false) return;
 
-    let accessTime = Date.now();
+    var accessTime = Date.now();
     accesDate = new Date(accessTime).toISOString();
 
     tempUserAgent = req.get('user-agent').toString(); // identify the http request by setting the user-agent on the worker while calibrating
@@ -722,9 +761,10 @@ app.get('/', async function (req, res) {
         tempArray[arrayPosition].dateArray.push(accesDate);
         tempName = tempArray[arrayPosition].workerName;
     }
-
-    console.log("\x1b[36mREQUEST:\x1b[0m HTTP Request from " + tempName + " \x1b[36m" + (accessTime - timeUrlSent) + "\x1b[0m ms after starting iteration. " + (accessTime - timeAllBrowsersReady)
-        + " ms after sending ready signal");
+    
+    
+    console.log("\x1b[36mREQUEST:\x1b[0m HTTP Request from " + tempName + " \x1b[36m" + (accessTime - timeUrlSent) + "\x1b[0m ms after starting iteration. " , (accessTime - timeAllBrowsersReady )
+        + " ms after sending browsergo signal");
 
     // pendingRequests -=1; // pendingRequestsTry
     // if(pendingRequests==0) {
@@ -735,7 +775,32 @@ app.get('/', async function (req, res) {
     //       });
     // }
 
-    res.send('measuring browser access time!');
-
+    //res.send('measuring browser access time!');
+    res.send(`
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Calibration</title>
+            <style>
+                body {
+                    background-color: red;
+                    margin: 0;
+                    height: 100vh;
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                    color: white;
+                    font-size: 2em;
+                }
+            </style>
+        </head>
+        <body>
+            measuring browser access time!
+        </body>
+        </html>
+    `);
+    
 
 }); 

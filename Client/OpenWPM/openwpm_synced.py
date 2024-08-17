@@ -1,3 +1,11 @@
+#****************************************************************************
+# openwpm_synced.py
+#
+# based on https://github.com/openwpm/OpenWPM/demo.py
+# modified for use in the bsync synchronisation framework
+#
+#****************************************************************************
+
 import argparse
 import sys
 from pathlib import Path
@@ -109,6 +117,9 @@ with TaskManager(
             print(
                 f"CommandSequence for {val} ran {'successfully' if success else 'unsuccessfully'}"
             )
+            if not success:
+                sys.stdout.write("CommandSequence ran unsuccessfully\n")
+                sys.stdout.flush()
 
         # Signalize that browser is ready for visiting URL
         sys.stdout.write("browserready\n")

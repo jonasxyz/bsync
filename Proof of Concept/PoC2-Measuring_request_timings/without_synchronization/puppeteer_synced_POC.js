@@ -44,30 +44,28 @@ if (proxyhost && proxyport) {
 
     // Send signal that browser is ready for visiting website
     process.stdout.write("browserready");
+    console.log(`but not waiting`);
 
-    process.stdin.on("data", async (data) => {
-        if (data.toString().includes("visiturl")) {
-            console.log("All browsers ready");
 
-            if (waitingtime > 0) {
-                console.log(`waiting ${waitingtime} ms`);
-                await new Promise(resolve => setTimeout(resolve, waitingtime));
-            }
+       
 
-            console.log(`visiting ${url}`);
-            //await page.goto(url);
-            await page.goto(url, {waitUntil : 'networkidle2' }).catch(e => void 0); // https://github.com/puppeteer/puppeteer/issues/4291
-            process.stdout.write("urldone");
-            
-            await waitOnSite(3);
+    if (waitingtime > 0) {
+        console.log(`waiting ${waitingtime} ms`);
+        await new Promise(resolve => setTimeout(resolve, waitingtime));
+    }
 
-            await browser.close();
+    console.log(`visiting ${url}`);
+    await page.goto(url);
 
-            
+    await waitOnSite(1);
 
-            process.exit();
-        }
-    });
+    await browser.close();
+
+    process.stdout.write("urldone");
+
+    process.exit();
+        
+    
 
 })();
 

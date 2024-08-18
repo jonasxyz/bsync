@@ -191,8 +191,10 @@ if [ "$1" != "--no-openwpm" ]; then
 	
 fi
 
-# devtools
+# Install dev Tools for remote deployment
 # sudo apt install openssh-server
+# sudo apt-get install tmux
+
 # sudo systemctl start ssh
 # sudo systemctl enable ssh
 # sudo nano /etc/ssh/sshd_config

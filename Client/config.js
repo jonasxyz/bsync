@@ -17,7 +17,7 @@ const configuration = {
 
 		enable_proxy : false, 							// set false to disable mitmproxy
 		//har_destination : "/home/user/Schreibtisch/HTTP/puppeteer/",		// old
-		har_destination : "/home/" + process.env.USERNAME +"/Downloads/Crawl-Data/", // e.g. "/home/user/http/"
+		har_destination : "/home/" + process.env.USERNAME +"/Downloads/Crawl-Data/", // e.g. "/home/user/http/" //todo auf ubuntu18 funktioniet nur noch USER anstatt USERNAME
 		proxy_host : "127.0.0.1",
 		proxy_port : "3031",
 	},

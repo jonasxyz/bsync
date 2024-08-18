@@ -444,16 +444,18 @@ module.exports =
             console.log("Proxy closed");
 
             if(!isCancelled){
-                socket.emit("browserfinished");
-                console.log("\x1b[36mSOCKETIO:\x1b[0m Sending browserfinished");
+                
 
                 var harPath = fileSaveDir + replaceDotWithUnderscore(clearUrl) + ".har"; 
                 if (fs.existsSync(harPath)) {
                     console.log("Proxy generated HAR file in directory:", harPath);
-                    storeRemote(harPath);
+                    await storeRemote(harPath);
                 } else {
                     console.log("Proxy failed to generate file in directory:", fileSaveDir);
                 }
+                console.log("\x1b[36mSOCKETIO:\x1b[0m Sending browserfinished");
+                socket.emit("browserfinished");
+
             } 
         })
         proxy.stdout.on("data", (data) => {
@@ -471,7 +473,7 @@ async function storeRemote(harPath) {
 
     // Send the file to the server
     socket.emit('uploadFile', { fileName, fileBuffer });
-    
+
     socket.on('uploadSuccess', (message) => {
         console.log('File uploaded successfully:', message);
     });

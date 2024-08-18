@@ -154,3 +154,5 @@ Client/puppeteer/puppeteer_synced copy.js
 Server/deploy.sh
 Client/config.js
 Client/config_copy.js
+Server/CrawlData/.*
+*.har

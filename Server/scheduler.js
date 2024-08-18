@@ -12,6 +12,7 @@ const app = express();
 var server = app.listen(config.port, () => console.log("Server listening on port " + config.port +"\n"));
 
 var io = require("socket.io")(server);
+const path = require('path');
 
 process.env.TZ = 'Europe/Amsterdam'; // DEBUG
 
@@ -39,6 +40,7 @@ var calibrationDone = false;
 var initCalibrationDone = false;
 var ongoingCrawl = false;
 var isAnswered = false;
+var rootDir = false;
 
 // var awaiting;
 
@@ -58,7 +60,6 @@ var browserDoneCountdown;
 
 var readyTimeoutCounter; // todo wenn browser x mal nicht ready wird crawl beenden oder option einfügen den crawl mit einem worker weniger fortzusetzen
 var doneTimeoutCounter;
-
 
 
 console.log('\nMaster server is starting...');
@@ -646,6 +647,46 @@ io.on("connection", socket => {
         process.exit();
     });
     
+    socket.on('uploadFile1', (data) => {
+        const { fileName, fileBuffer } = data;
+        //createCrawlDirectory();
+        // Save the file to disk
+        //const fileName = `data.${data.client_name}`;
+        const filePath = createCrawlDirectory() + '/' + fileName;
+        fs.writeFile(filePath, fileBuffer, (err) => {
+            if (err) {
+                console.error('File save error:', err);
+                socket.emit('uploadError', 'File save failed');
+            } else {
+                console.log('File saved successfully');
+                socket.emit('uploadSuccess', 'File saved successfully');
+            }
+        });
+        
+    });
+
+    socket.on('uploadFile', (data) => {
+        const { fileName, fileBuffer } = data;
+
+        createCrawlDirectory()
+            .then((dirPath) => {
+                const filePath = path.join(dirPath, fileName);
+                fs.writeFile(filePath, fileBuffer, (err) => {
+                    if (err) {
+                        console.error('File save error:', err);
+                        socket.emit('uploadError', 'File save failed');
+                    } else {
+                        console.log('File saved successfully');
+                        socket.emit('uploadSuccess', 'File saved successfully');
+                    }
+                });
+            })
+            .catch((err) => {
+                console.error('Directory creation failed:', err);
+                socket.emit('uploadError', 'Directory creation failed');
+            });
+    });
+
 })
 
 
@@ -697,34 +738,46 @@ function browserReadyTimeout(){ // timeout if the browser ready signal ist not r
 
 }
 
-function createCrawlDirectory() {
-    const crawlDir = `crawl_${Date.now()}`;
-    const dirPath = path.join(__dirname, 'CrawlData', crawlDir);
+let rootDirPath = null; // To store the path of the root directory
 
-    fs.mkdir(dirPath, (err) => {
-        if (err) {
-            console.error('Failed to create crawl directory:', err);
+function createCrawlDirectory() {
+    return new Promise((resolve, reject) => {
+        if (!rootDirPath) {
+            const crawlDir = `crawl_${Date.now()}`;
+            rootDirPath = path.join(__dirname, 'CrawlData', crawlDir);
+
+            // Create the root directory
+            fs.mkdir(rootDirPath, { recursive: true }, (err) => {
+                if (err) {
+                    console.error('Failed to create root crawl directory:', err);
+                    rootDirPath = null; // Reset if there's an error
+                    return reject(err);
+                }
+                console.log('Root crawl directory created:', crawlDir);
+
+                // Now create the URL-specific subdirectory
+                createUrlSubdirectory(rootDirPath, resolve, reject);
+            });
         } else {
-            console.log('Crawl directory created:', crawlDir);
+            // Root directory already exists, just create the URL-specific subdirectory
+            createUrlSubdirectory(rootDirPath, resolve, reject);
         }
     });
 }
 
-socket.on('uploadFile', (data) => {
-    const { fileName, fileBuffer } = data;
-    createCrawlDirectory();
-    // Save the file to disk
-    //const fileName = `data.${data.client_name}`;
-    fs.writeFile(path.join(__dirname, 'uploads', fileName), fileBuffer, (err) => {
+function createUrlSubdirectory(rootDirPath, resolve, reject) {
+    const urlDirPath = path.join(rootDirPath, tempUrl);
+    fs.mkdir(urlDirPath, { recursive: true }, (err) => {
         if (err) {
-            console.error('File save error:', err);
-            socket.emit('uploadError', 'File save failed');
+            console.error('Failed to create URL subdirectory:', err);
+            return reject(err);
         } else {
-            console.log('File saved successfully');
-            socket.emit('uploadSuccess', 'File saved successfully');
+            console.log('URL subdirectory created:', urlDirPath);
+            return resolve(urlDirPath);
         }
     });
-});
+}
+
 
 async function calibration(){
 

@@ -447,8 +447,10 @@ module.exports =
                 socket.emit("browserfinished");
                 console.log("\x1b[36mSOCKETIO:\x1b[0m Sending browserfinished");
 
-                if (fs.existsSync(fileSaveDir + replaceDotWithUnderscore(clearUrl) + ".har")) {
-                    console.log("Proxy generated HAR file in directory:", fileSaveDir + replaceDotWithUnderscore(clearUrl) + ".har");
+                var harPath = fileSaveDir + replaceDotWithUnderscore(clearUrl) + ".har"; 
+                if (fs.existsSync(harPath)) {
+                    console.log("Proxy generated HAR file in directory:", harPath);
+                    storeRemote(harPath);
                 } else {
                     console.log("Proxy failed to generate file in directory:", fileSaveDir);
                 }
@@ -459,6 +461,24 @@ module.exports =
             // console.log("proxy stdout: " + data); // DEBUG Show proxy HTTP requests
         })
     }
+}
+
+async function storeRemote(harPath) {
+    // Read the file as a buffer
+    const filePath = harPath;
+    const fileName = path.basename(filePath);
+    const fileBuffer = fs.readFileSync(filePath);
+
+    // Send the file to the server
+    socket.emit('uploadFile', { fileName, fileBuffer });
+    
+    socket.on('uploadSuccess', (message) => {
+        console.log('File uploaded successfully:', message);
+    });
+    
+    socket.on('uploadError', (message) => {
+        console.error('File upload error:', message);
+    });
 }
 
 // Create directory to store generated files for current crawl

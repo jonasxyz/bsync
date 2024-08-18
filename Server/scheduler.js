@@ -697,6 +697,34 @@ function browserReadyTimeout(){ // timeout if the browser ready signal ist not r
 
 }
 
+function createCrawlDirectory() {
+    const crawlDir = `crawl_${Date.now()}`;
+    const dirPath = path.join(__dirname, 'CrawlData', crawlDir);
+
+    fs.mkdir(dirPath, (err) => {
+        if (err) {
+            console.error('Failed to create crawl directory:', err);
+        } else {
+            console.log('Crawl directory created:', crawlDir);
+        }
+    });
+}
+
+socket.on('uploadFile', (data) => {
+    const { fileName, fileBuffer } = data;
+    createCrawlDirectory();
+    // Save the file to disk
+    //const fileName = `data.${data.client_name}`;
+    fs.writeFile(path.join(__dirname, 'uploads', fileName), fileBuffer, (err) => {
+        if (err) {
+            console.error('File save error:', err);
+            socket.emit('uploadError', 'File save failed');
+        } else {
+            console.log('File saved successfully');
+            socket.emit('uploadSuccess', 'File saved successfully');
+        }
+    });
+});
 
 async function calibration(){
 

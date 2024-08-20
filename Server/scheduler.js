@@ -2,27 +2,25 @@ var statFunctions = require('./functions/statFunctions.js');
 var logFunctions = require('./functions/logging.js');
 var helperFunctions = require('./functions/helper.js');
 var config = require('./config.js');
+const { logMessage } = require('./functions/helper.js');
 
 var prompt = require('prompt');
-
 const fs = require('fs');
-
+const multer = require('multer');
 const express = require('express');
 const app = express();
-var server = app.listen(config.port, () => console.log("Server listening on port " + config.port +"\n"));
+
+var server = app.listen(config.port, () => logMessage("status", 'Server listening on port ' + config.port +"\n"));
+
+
 
 var io = require("socket.io")(server);
 const path = require('path');
 
 process.env.TZ = 'Europe/Amsterdam'; // DEBUG
 
-
-// todo vielleicht estimatedRequest hinzufügen 
-// bester zeitpunkt ein signal schicken und dann ins normale array rein um etwas nachvollziehen zu können wann die request auf den websites eingehen
-
-var arrayClients = []; // stores connected workers and data for calibration
-
-var arrayStatistics = []; // stores data while crawling
+var arrayClients = []; // Stores connected workers and data for calibration
+var arrayStatistics = []; // Stores data while crawling
 
 //var activeClients = 0, urlsDone = 0, pingOkay = 0, testsDone = 0, browsersReady = 0, pendingJobs  = 0; // counters
 var activeClients = 0;
@@ -31,9 +29,8 @@ var pingOkay = 0;
 var testsDone = 0;
 var browsersReady = 0;
 var pendingJobs  = 0;
-var myPromise;
 
-//var urlList= fs.readFileSync("./"+config.url_list).toString().split("\r\n"); // create array with one element out of each line
+//var urlList= fs.readFileSync("./"+config.url_list).toString().split("\r\n"); // Create array with one element out of each line
 var urlList = fs.readFileSync("./" + config.url_list, 'utf8').split('\r\n').filter(line => line.trim() !== ''); //vmedit
 
 var calibrationDone = false;
@@ -61,23 +58,26 @@ var browserDoneCountdown;
 var readyTimeoutCounter; // todo wenn browser x mal nicht ready wird crawl beenden oder option einfügen den crawl mit einem worker weniger fortzusetzen
 var doneTimeoutCounter;
 
+var rootDirPath;
 
 console.log('\nMaster server is starting...');
+
+// Create directory for crawl logs and storage for HAR-Data
+createCrawlDirectory();
 
 if (config.test_run){
     numIterations = config.test_iterations;
     console.log("Starting test run with " + numIterations +" Iterations");
-    logFunctions.startLogTesting(new Date().toISOString().split('T')[0]);
+    logFunctions.startLogTesting(new Date().toISOString().split('T')[0], rootDirPath);
 
 }else{
     numIterations = urlList.length;
     console.log("Fetched "+ numIterations+" entries from "+ config.url_list);
-    logFunctions.startLog(config.url_list.toString(), new Date().toISOString().split('T')[0]);
+    logFunctions.startLog(config.url_list.toString(), new Date().toISOString().split('T')[0], rootDirPath);
 
 } 
 
-
-//events erklärt  https://socket.io/docs/v4/emitting-events/
+// Events erklärt  https://socket.io/docs/v4/emitting-events/
 
 io.on("connection", socket => {
 
@@ -87,9 +87,9 @@ io.on("connection", socket => {
     }
 
     
-    activeClients+=1; // counter for connected clients
+    activeClients+=1; // Counter for connected clients
 
-    io.to(socket.id).emit("numclients", config.num_clients); // send number of connected workers to each client //todo unnötig entfernen
+    io.to(socket.id).emit("numclients", config.num_clients); // Send number of connected workers to each client //todo unnötig entfernen
     
     socket.on("initialization", (clientname)=>{
 
@@ -206,7 +206,7 @@ io.on("connection", socket => {
                 //console.log("2errorDetail=",errorDetailsLine); //debug errormsg
 
             } catch (error) {
-                errorLine = "unknown error";
+                // errorLine = "unknown error"; // todo add error detail handling
             }
             
             tempArray[arrayPosition].errorArray.push(errorLine); // log first line of errormessage //vmedit todo check for other error and openwpm
@@ -226,8 +226,6 @@ io.on("connection", socket => {
         //console.log ("pushed " + (dateUrlDone - timeUrlSent));
 
 
-        
-        
     })
 
     socket.on("browserfinished", async (data) => {
@@ -267,7 +265,7 @@ io.on("connection", socket => {
             console.log("\x1b[31mERROR: " + socket.data.clientname.toString() + " error visiting URL....", "\x1b[0m");
 
             // console.log("neue funktion timeout urldone fehlt");
-            //browserDoneTimeout(true);   // VMEDIT dont kill all browsers if that happens
+            // browserDoneTimeout(true);   // VMEDIT dont kill all browsers if that happens
         } 
 
 
@@ -665,8 +663,10 @@ io.on("connection", socket => {
         
     });
 
-    socket.on('uploadFile', (data) => {
+    socket.once('uploadFile', (data) => {
         const { fileName, fileBuffer } = data;
+
+        console.log("\x1b[33mSTATUS: \x1b[0m" +"Receiving uploadFile signal");
 
         createCrawlDirectory()
             .then((dirPath) => {
@@ -676,7 +676,7 @@ io.on("connection", socket => {
                         console.error('File save error:', err);
                         socket.emit('uploadError', 'File save failed');
                     } else {
-                        console.log('File saved successfully');
+                        console.log('File', fileName, "saved successfully");
                         socket.emit('uploadSuccess', 'File saved successfully');
                     }
                 });
@@ -688,15 +688,6 @@ io.on("connection", socket => {
     });
 
 })
-
-
-function sleep(ms) {
-    // console.log("waiting") //debug
-
-    return new Promise((resolve) => {
-      setTimeout(resolve, ms);
-    });
-  }
 
 function browserReadyTimeout(){ // timeout if the browser ready signal ist not received within the timelimit 
 
@@ -738,13 +729,13 @@ function browserReadyTimeout(){ // timeout if the browser ready signal ist not r
 
 }
 
-let rootDirPath = null; // To store the path of the root directory
-
 function createCrawlDirectory() {
     return new Promise((resolve, reject) => {
         if (!rootDirPath) {
             const crawlDir = `crawl_${Date.now()}`;
-            rootDirPath = path.join(__dirname, 'CrawlData', crawlDir);
+            // rootDirPath = path.join(__dirname, 'CrawlData', crawlDir); // crawlDir in repository
+            rootDirPath = path.join(config.storage_path, crawlDir);
+
 
             // Create the root directory
             fs.mkdir(rootDirPath, { recursive: true }, (err) => {
@@ -754,30 +745,28 @@ function createCrawlDirectory() {
                     return reject(err);
                 }
                 console.log('Root crawl directory created:', crawlDir);
+                return resolve(rootDirPath);
 
                 // Now create the URL-specific subdirectory
-                createUrlSubdirectory(rootDirPath, resolve, reject);
+                // createUrlSubdirectory(rootDirPath, resolve, reject);
             });
-        } else {
-            // Root directory already exists, just create the URL-specific subdirectory
-            createUrlSubdirectory(rootDirPath, resolve, reject);
         }
     });
 }
-
-function createUrlSubdirectory(rootDirPath, resolve, reject) {
-    const urlDirPath = path.join(rootDirPath, tempUrl);
-    fs.mkdir(urlDirPath, { recursive: true }, (err) => {
-        if (err) {
-            console.error('Failed to create URL subdirectory:', err);
-            return reject(err);
-        } else {
-            console.log('URL subdirectory created:', urlDirPath);
-            return resolve(urlDirPath);
-        }
+function createUrlSubdirectory(rootDirPath) {
+    return new Promise((resolve, reject) => {
+        const urlDirPath = path.join(rootDirPath, tempUrl);
+        fs.mkdir(urlDirPath, { recursive: true }, (err) => {
+            if (err) {
+                console.error('Failed to create URL subdirectory:', err);
+                return reject(err);
+            } else {
+                console.log('URL subdirectory created:', urlDirPath);
+                resolve(urlDirPath);
+            }
+        });
     });
 }
-
 
 async function calibration(){
 
@@ -847,14 +836,6 @@ app.get('/', async function (req, res) {
     console.log("\x1b[36mREQUEST:\x1b[0m HTTP Request from " + tempName + " \x1b[36m" + (accessTime - timeUrlSent) + "\x1b[0m ms after starting iteration. " , (accessTime - timeAllBrowsersReady )
         + " ms after sending browsergo signal");
 
-    // pendingRequests -=1; // pendingRequestsTry
-    // if(pendingRequests==0) {
-    //     console.log("request done")
-    //     myPromise = new Promise(function(resolve, reject) {
-    //         console.log("resolved"):
-    //         resolve();
-    //       });
-    // }
 
     //res.send('measuring browser access time!');
     res.send(`
@@ -885,3 +866,59 @@ app.get('/', async function (req, res) {
     
 
 }); 
+
+
+let completedUploads = 0;
+let uniqueUploads = new Set(); // Set to track unique uploads
+
+// Configure multer for file storage
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        // Create directory for storing the files
+        // createCrawlDirectory() old
+        createUrlSubdirectory(rootDirPath)
+            .then(dirPath => {
+                cb(null, dirPath); // Pass the directory path to Multer as the destination
+            })
+            .catch(err => {
+                console.error('Directory creation failed:', err);
+                cb(err);
+            });
+    },
+    filename: (req, file, cb) => {
+        let uploadUserAgentStorage = req.get('User-Agent'); // Get User-Agent header
+
+        cb(null, uploadUserAgentStorage + '_' + file.originalname); //todo check
+    }
+});
+
+const upload = multer({ storage: storage });
+
+// Endpoint for file upload
+app.post('/upload', upload.single('file'), (req, res) => {
+    uploadUserAgent = req.get('User-Agent'); // identify the http-request by setting the user-agent on the worker
+
+    if (req.file) {
+
+        if (uniqueUploads.has(uploadUserAgent)) {
+            // Duplicate upload detected
+            console.error(`Duplicate upload detected from client ${uploadUserAgent} for file ${req.file.filename}`);
+            return res.status(400).send('Duplicate upload detected');
+        }
+
+        console.log("INFO: " + "File" , req.file.filename, "saved successfully from client", uploadUserAgent);
+        uniqueUploads.add(uploadUserAgent);
+        completedUploads++;
+
+        if (completedUploads === config.num_clients) {
+            logMessage("status", "All clients have uploaded their data.");
+            completedUploads = 0;
+        }
+
+        res.status(200).send('File saved successfully');
+    } else {
+        console.error('File save error');
+        res.status(500).send('File save failed');
+
+    }
+});

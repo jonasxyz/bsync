@@ -156,3 +156,4 @@ Client/config.js
 Client/config_copy.js
 Server/CrawlData/.*
 *.har
+Server/DeployChangesOverwrite.sh

@@ -2,6 +2,10 @@ const {spawn} = require('child_process');
 const path = require('path');
 var exkill = require("tree-kill");
 var fs = require('fs');
+const axios = require('axios'); // for HTTP file upload
+const FormData = require('form-data');
+
+
 
 const config = require("../config.js");
 const worker = config.activeConfig.worker;
@@ -444,12 +448,18 @@ module.exports =
             console.log("Proxy closed");
 
             if(!isCancelled){
-                
 
-                var harPath = fileSaveDir + replaceDotWithUnderscore(clearUrl) + ".har"; 
+                const harPath = fileSaveDir + replaceDotWithUnderscore(clearUrl) + ".har"; 
                 if (fs.existsSync(harPath)) {
                     console.log("Proxy generated HAR file in directory:", harPath);
-                    await storeRemote(harPath);
+                    try {
+                        // Wait for the upload to finish
+                        await storeRemoteHTTP(harPath);  
+
+                        console.log("\x1b[36mSOCKETIO:\x1b[0m File upload completed.");
+                    } catch (error) {
+                        console.error("File upload failed:", error.message);
+                    }
                 } else {
                     console.log("Proxy failed to generate file in directory:", fileSaveDir);
                 }
@@ -464,22 +474,63 @@ module.exports =
         })
     }
 }
-
 async function storeRemote(harPath) {
-    // Read the file as a buffer
-    const filePath = harPath;
-    const fileName = path.basename(filePath);
-    const fileBuffer = fs.readFileSync(filePath);
+    return new Promise((resolve, reject) => {
+        // Read the file as a buffer
+        const filePath = harPath;
+        const fileName = path.basename(filePath);
+        const fileBuffer = fs.readFileSync(filePath);
 
-    // Send the file to the server
-    socket.emit('uploadFile', { fileName, fileBuffer });
+        // Send the file to the server
+        console.log("\x1b[DEBUG:\x1b[0m Before uploadFile");
 
-    socket.on('uploadSuccess', (message) => {
-        console.log('File uploaded successfully:', message);
+        socket.emit('uploadFile', { fileName, fileBuffer });
+        console.log("\x1b[DEBUG:\x1b[0m after uploadFile");
+
+
+        // Use `once` to ensure the listener is only triggered once
+        socket.once('uploadSuccess', (message) => {
+            console.log('File uploaded successfully:', message);
+            resolve(message); 
+        });
+        
+        socket.once('uploadError', (message) => {
+            console.error('File upload error:', message);
+            reject(new Error(message)); 
+        });
     });
-    
-    socket.on('uploadError', (message) => {
-        console.error('File upload error:', message);
+}
+async function storeRemoteHTTP(harPath) {
+    return new Promise((resolve, reject) => {
+        // Read the file as a buffer
+        const filePath = harPath;
+        const fileName = path.basename(filePath);
+        const fileStream = fs.createReadStream(filePath);
+
+        // Create form data
+        const form = new FormData();
+        form.append('file', fileStream, fileName);
+
+        // Send the file to the server using axios
+        axios.post(config.activeConfig.base.master_addr + '/upload', form, {
+            headers: {
+                ...form.getHeaders(),
+                "User-Agent": worker.client_name 
+
+            },
+        })
+        .then(response => {
+            console.log('File uploaded successfully:', response.data);
+            socket.once('uploadSuccess', (message) => {
+                console.log('File uploaded successfully:', message);
+                
+            });
+            resolve(response.data);
+        })
+        .catch(error => {
+            console.error('File upload error:', error);
+            reject(new Error('File upload failed'));
+        });
     });
 }
 

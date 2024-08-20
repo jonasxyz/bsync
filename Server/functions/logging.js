@@ -7,14 +7,14 @@ var file = "";
 
 module.exports ={
 
-    startLog : function (urlList, date) {
+    startLog : function (urlList, date, storagePath) {
 
-        file = "CRAWL_" + urlList.substr(0, urlList.lastIndexOf(".")) + date + ".csv";
+        file = path.join(storagePath, "CRAWL_" + urlList.substr(0, urlList.lastIndexOf(".")) + "_" + date + ".csv");
         fs.writeFileSync(file, "STATUS, ITERATION, CLIENT, DATE, READY AFTER(MS), WATINGTIME(MS), ESTIMATED ACCESS AFTER(MS), EXIT AFTER(MS), ESTIMATED MAX DELAY(MS)");
     },
     startLogTesting : function (date) {
 
-        file = "TESTCRAWL_" + date + ".csv";
+        file = storagePath, "TESTCRAWL_" + date + ".csv";
         fs.writeFileSync(file, "STATUS, ITERATION, CLIENT, DATE, READY AFTER(MS), WATINGTIME(MS), REQUEST AFTER(MS), DONE AFTER(MS), MAX DELAY(MS)");
     },
     logTesting : function (array, urlsDone) {

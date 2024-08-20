@@ -5,8 +5,10 @@ const configuration = {
 
 	base: {
 		master_addr: "http://192.168.178.90:3000", 		// e.g. "http://localhost:3000"
-		pagevisit_duration: 3							// specify time in seconds the browser stays on websites
+		pagevisit_duration: 3,							// specify time in seconds the browser stays on websites
 
+		remote_filestorage : true,						// set true to store uploaded har data on the master server  //todo: not implemented yet
+		delete_after_upload : true,						// set true to delete the har files after upload
 	},
 	puppeteer: {
 		client_name: "puppeteer_HL", 						// must be unique

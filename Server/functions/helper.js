@@ -70,6 +70,32 @@ module.exports ={
             return obj1[property] > obj2[property] ? 1
                 : obj1[property] < obj2[property] ? -1 : 0;
         }
+    },
+
+    // Utility function for colored console messages
+    logMessage : function (type, message) {
+        const colors = {
+            reset: "\x1b[0m",
+
+            red: "\x1b[31m",
+            error: "\x1b[31m", // red
+
+            yellow: "\x1b[33m",
+            status: "\x1b[33m", // yellow
+
+            bgWhite: "\x1b[47m",
+            debug: "\x1b[47m", // bgWhite
+
+            blue: "\x1b[34m",
+            magenta: "\x1b[35m",
+            cyan: "\x1b[36m",
+            white: "\x1b[37m",
+
+        };
+
+        // console.log((colors[color] || colors.white) + message + colors.reset);
+        const typeColor = colors[type.toLowerCase()] || colors.info; // default to info color if type not found
+        console.log(typeColor + type.toUpperCase() + ": " + colors.reset + message);
     }
 
 }

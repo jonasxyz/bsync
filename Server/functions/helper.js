@@ -1,3 +1,5 @@
+const prompt = require('prompt');
+
 module.exports ={
 
     searchArray : function(myArray, myValue, myColumn) {
@@ -96,6 +98,29 @@ module.exports ={
         // console.log((colors[color] || colors.white) + message + colors.reset);
         const typeColor = colors[type.toLowerCase()] || colors.info; // default to info color if type not found
         console.log(typeColor + type.toUpperCase() + ": " + colors.reset + message);
+    },
+
+    getUserConfirmation : function (operation, callback) {
+        prompt.message = '';
+        prompt.start();
+        prompt.get({
+            properties: {
+                confirm: {
+                    // allow yes, no, y, n, YES, NO, Y, N as answer
+                    pattern: /^(yes|no|y|n)$/gi,
+                    description: `\nDo you want to start the ${operation} ? (y/n)\n`,
+                    message: 'Type yes/no',
+                    required: true,
+                    default: 'yes'
+                }
+            }
+        }, function (err, result) {
+            if (err) {
+                callback(err, null);
+                return;
+            }
+            callback(null, result.confirm.toLowerCase());
+        });
     }
 
 }

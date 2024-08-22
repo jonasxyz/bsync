@@ -22,6 +22,13 @@ process.env.TZ = 'Europe/Amsterdam'; // DEBUG
 var arrayClients = []; // Stores connected workers and data for calibration
 var arrayStatistics = []; // Stores data while crawling
 
+const state = { // Todo refactor like that
+    ongoingCrawl: false,
+    calibrationDone: false,
+    isAnswered: false,
+};
+
+
 //var activeClients = 0, urlsDone = 0, pingOkay = 0, testsDone = 0, browsersReady = 0, pendingJobs  = 0; // counters
 var activeClients = 0;
 var urlsDone = 0;
@@ -37,7 +44,6 @@ var calibrationDone = false;
 var initCalibrationDone = false;
 var ongoingCrawl = false;
 var isAnswered = false;
-var rootDir = false;
 
 // var awaiting;
 
@@ -97,13 +103,37 @@ io.on("connection", socket => {
 
         logFunctions.logConnect(clientname, new Date().toISOString());
 
-      
-        arrayClients.push({ workerName: socket.data.clientname, socketId: socket.id, dateArray: [], readyArray: [], requestArray: [], doneArray: [], browserFinishedArray: [] , maxDelayArray: [], avgDelay: 0, waitMs: 0, avgDone: 0, offsetDone: 0});
-        arrayStatistics.push({ workerName: socket.data.clientname, socketId: socket.id, dateArray: [], readyArray: [], waitingTimeArray: [], requestArray: [], doneArray: [], browserFinishedArray: [] , maxDelayArray: [] , errorArray: []});
+        // Storing connected clients and data for each URL-Iteration while crawling 
+        arrayClients.push({ 
+            workerName: socket.data.clientname, 
+            socketId: socket.id, 
+            dateArray: [], 
+            readyArray: [], 
+            requestArray: [], 
+            doneArray: [], 
+            browserFinishedArray: [], 
+            maxDelayArray: [], 
+            avgDelay: 0, 
+            waitMs: 0, 
+            avgDone: 0, 
+            offsetDone: 0
+        });
+        // Collecting data while calibration
+        arrayStatistics.push({ 
+            workerName: socket.data.clientname, 
+            socketId: socket.id, 
+            dateArray: [], 
+            readyArray: [], 
+            waitingTimeArray: [], 
+            requestArray: [], 
+            doneArray: [], 
+            browserFinishedArray: [], 
+            maxDelayArray: [], 
+            errorArray: []
+        });
  
         console.log("INFO: " + "Client "+clientname + " connected. "+ activeClients+ "/" + config.num_clients+" clients connected to start crawl");
 
- 
         if(activeClients == config.num_clients && ongoingCrawl==false){                   
 
             console.log("\x1b[33mSTATUS: \x1b[0m" + "All clients connected. Starting latency test...\n");
@@ -111,7 +141,6 @@ io.on("connection", socket => {
             io.sockets.emit("ping");
         }
     
- 
         if (ongoingCrawl == true && activeClients == config.num_clients) {
 
             console.log("\x1b[33mSTATUS: \x1b[0m" + "Reconnection worked.\nRestarting with calibration then continuing the crawl with the last URL...", "\x1b[0m");
@@ -316,9 +345,7 @@ io.on("connection", socket => {
 
         if (pendingJobs == 0 && calibrationDone == false) { // if all browser done the url in calibration
 
-            // await myPromise; // pendingRequestsTry
-
-            // insert stats into array
+            // Insert stats into array
             var maxDelay = statFunctions.getMaxDelay(arrayClients, testsDone);
             statFunctions.insertMaxDelay(arrayClients, maxDelay, testsDone);
             
@@ -328,18 +355,15 @@ io.on("connection", socket => {
 
             testsDone += 1;
 
-            // helperFunctions.checkArrayLengths(arrayClients, testsDone, false); //debug
+            // helperFunctions.checkArrayLengths(arrayClients, testsDone, false); // Debug
 
             console.log("\x1b[33mSTATUS: \x1b[0m" + "Calibration #" + testsDone + " Delay between first and last HTTP Request", "\x1b[33m", + statFunctions.getMaxDelay(arrayClients, testsDone-1) + " ms" , "\x1b[0m");
 
 
-            if (testsDone == config.calibration_runs ) { // calibration iterations done
+            if (testsDone == config.calibration_runs ) { // Calibration iterations done
         
-                // await sleep(4000);
-
                 calibration();
 
-                
                 if (initCalibrationDone == false) { 
 
                     let calibrationTookMs = Date.now() - calibrationTime;
@@ -356,14 +380,13 @@ io.on("connection", socket => {
 
                     initCalibrationDone = true;
                     console.table(arrayClients) //debug
-
                 }
                
                 calibrationTime = 0;
                 testsDone= 0;
                 sendUrl(false); 
 
-            }else{ // if calibration done else continue calibration
+            }else{ // If calibration done else continue calibration
 
                 sendUrl(true);
             }
@@ -521,46 +544,26 @@ io.on("connection", socket => {
     }
 
     function interfaceQuestion(operation) {
-        prompt.message = '';
-        prompt.start();
-        prompt.get({
-            properties: {
 
-                confirm: {
-                    // allow yes, no, y, n, YES, NO, Y, N as answer
-                    pattern: /^(yes|no|y|n)$/gi,
-                    description: "\nDo you want to start the " + operation + " ? (y/n)\n",
-                    message: 'Type yes/no',
-                    required: true,
-                    default: 'yes'
+        helperFunctions.getUserConfirmation(operation, (err, confirmation) => {
+    
+            if (confirmation === 'y' || confirmation === 'yes') {
+                if (operation === "calibration" && isAnswered === false) {
+                    sendUrl(true); // start testing accesstime to  master webserver for calibration
                 }
-            }
-        }, function (err, result) {
-            try {
-                var c = result.confirm.toLowerCase();
-            }catch(e){
-                console.log("\x1b[33mSTATUS: \x1b[0m" + 'Shutting down...');
-                io.sockets.emit("close", "cancel");
-                process.exit();
-            }
-
-            if (c == 'y' || c == 'yes') {
-                if (operation == "calibration" && isAnswered==false) sendUrl(true); // start testing accesstime to  master webserver for calibration
-                      
-                if (operation == "crawl" && isAnswered==false){
+    
+                if (operation === "crawl" && isAnswered === false) {
                     sendUrl(false);
                     calibrationDone = true; // vmedit skipcalibration
                     initCalibrationDone = true;
-                } 
-                isAnswered=true; // avoid bufferd interface questions when client loses connection while question is active
+                }
+                isAnswered = true; // avoid buffered interface questions when client loses connection while question is active
                 return;
-
             }
             console.log("\x1b[33mSTATUS: \x1b[0m" + 'Shutting down...');
             io.sockets.emit("close", "cancel");
             process.exit();
         });
-
     }
 
     //todo der der austimet behält zombie child

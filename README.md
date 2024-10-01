@@ -7,7 +7,7 @@ Currently integrated frameworks:
 - [OpenWPM](https://github.com/openwpm/OpenWPM/) tested on v0.29.0
 - [puppeteer](https://github.com/puppeteer/puppeteer) tested on v?
 
-## Concept/Methodology
+## Concept
 
 `bsync` allows the distribution of automation frameworks across different systems (e.g., VMs) for parallelized testing. The framework ensures that a list of URLs is synchronously assigned to workers, ensuring precise timing for visiting each site.
 
@@ -32,21 +32,21 @@ Alternatively if manual installation is preferred, follow these steps:
 	-  Client: `cd /bsync/Client/ && npm install`
 	- Scheduler: `cd /bsync/Server/` then `npm install`
 - Create mitmproxy SSL-Certificate on each Client. Follow the [mitmproxy certificate documentation](https://docs.mitmproxy.org/stable/concepts-certificates/).
-- Configure Automated Browsers to use custom certificate. Both browser currently don't use the system wide certificate store and need further setup:
+- Configure Automated Browsers to use the custom certificate. Both browser currently don't use the system wide certificate store and need further setup:
 	- Puppeteer: See [this setup](https://superuser.com/a/1703365).
 	- OpenWPM: Follow [this approach](https://askubuntu.com/a/1036637) but adjust paths for OpenWPM's Firefox instance.
 
 
 ## Usage
 
-1. Setup `bsync` on all machines that will run the automation frameworks
-2. Configure Workers
+1. **Setup `bsync` on all machines that will run the automation frameworks**
+2. **Configure Workers**
 Modify the Worker and Automation Framework settings in the [config.js](https://github.com/jonasxyz/bsync/Client/config.js) file
-3. Choose a machine to run the Scheduler on
+3. **Choose a machine to run the Scheduler on**
 The Scheduler manages synchronization and central control. Can be any machine.
-4. Configure Scheduler:
+4. **Configure Scheduler**:
 Update the Scheduler configuration in `bsync/Server/config.py` to define the crawl
-5. Run `bsync` instances  
+5. **Run `bsync` instances**  
 Start both the Scheduler and Worker instances in the terminal:
 	- On the Scheduler:
 `node bsync/Server/scheduler.js`
@@ -62,7 +62,7 @@ After the connection is established between the Scheduler and Workers, accept th
 - **Synchronized Access**: Ensure all browsers access webpages within a 1-second margin of error across different frameworks and machines.
 - **Test Runs**: Perform test runs to check synchronization, allowing further calibration of browser settings.
 
--   **Centralized Control**: The Scheduler provides a centralized control point for all Worker instances.
+- **Centralized Control**: The Scheduler provides a centralized control point for all Worker instances.
 
 - **Automatic HTTP/S Recording**: Record and save HTTP/S communication in `.har`format  for each website using `mitmproxy`.
 
@@ -73,15 +73,15 @@ After the connection is established between the Scheduler and Workers, accept th
 ## Dependencies
 
 ### Client
-[Node.js](https://github.com/nodejs) > 18
-python3 
-[mitmproxy](https://github.com/mitmproxy/mitmproxy) > 10.1.0
-[socket.io-client](https://www.npmjs.com/package/socket.io-client)
+- [Node.js](https://github.com/nodejs) > 18 
+- [python3](https://www.python.org/downloads/)
+- [mitmproxy](https://github.com/mitmproxy/mitmproxy) > 10.1.0
+- [socket.io-client](https://www.npmjs.com/package/socket.io-client)
 
-[OpenWPM](https://github.com/openwpm/OpenWPM/releases/tag/v0.29.0) tested on v0.29.0
-[puppeteer](https://github.com/puppeteer/puppeteer) tested on v?
+- [OpenWPM](https://github.com/openwpm/OpenWPM/releases/tag/v0.29.0) tested on v0.29.0
+- [puppeteer](https://github.com/puppeteer/puppeteer) tested on v?
 
 ### Scheduler
-[Node.js](https://github.com/nodejs) 
-[socket.io-server]
-express
+- [Node.js](https://github.com/nodejs) 
+- [socket.io-server](https://www.npmjs.com/package/socket.io-server)
+- [express](https://www.npmjs.com/package/express)

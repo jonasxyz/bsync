@@ -137,6 +137,8 @@ with TaskManager(
                 # Start by visiting the page
                 command_sequence = CommandSequence(
                     site,
+                    # https://github.com/openwpm/OpenWPM/blob/master/docs/Configuration.md#stateful-vs-stateless-crawls
+                    # reset=True,
                     site_rank=index,
                     callback=callback,
                 )

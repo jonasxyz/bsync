@@ -809,7 +809,6 @@ async function calibration(){
 
 }
 
-
 app.get('/', async function (req, res) {
 
     if (activeClients != config.num_clients || ongoingCrawl == false) return;

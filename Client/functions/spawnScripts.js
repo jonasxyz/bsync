@@ -500,6 +500,7 @@ async function storeRemote(harPath) {
         });
     });
 }
+
 async function storeRemoteHTTP(harPath) {
     return new Promise((resolve, reject) => {
         // Read the file as a buffer

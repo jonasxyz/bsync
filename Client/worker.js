@@ -24,6 +24,7 @@ console.log("Client trying to connect to master server...");
 
 socket.on("connect", data => {
   console.log("Client " + socket.id+" succesfully connected");
+  console.log("Client session id: " + socket.sessionid); //
   socket.emit("initialization", worker.client_name);
 
 });

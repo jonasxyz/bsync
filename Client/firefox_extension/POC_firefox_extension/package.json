@@ -1,0 +1,18 @@
+{
+  "name": "bsync-firefox-extension",
+  "version": "1.0.0",
+  "description": "Firefox extension for BSYNC framework integration",
+  "main": "firefox_launcher.js",
+  "scripts": {
+    "start": "node firefox_launcher.js",
+    "install-extension": "node install_extension.js"
+  },
+  "dependencies": {
+    "ws": "^8.13.0"
+  },
+  "engines": {
+    "node": ">=12.0.0"
+  },
+  "author": "",
+  "license": "MIT"
+} 

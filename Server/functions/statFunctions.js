@@ -34,11 +34,8 @@ module.exports ={
             if (array[i].requestArray[iterations] < fastestReq) {
                 fastestReq = array[i].requestArray[iterations];
             }  
-            
         }
-
         return slowestReq - fastestReq;
-
     },
 
     insertMaxDelay : function (array, maxDelay){
@@ -46,12 +43,10 @@ module.exports ={
         array.forEach(element => {
             element.maxDelayArray.push(maxDelay);
             // element.maxDelayArray.splice(iterations,0, maxDelay);
-
         });
-
     },
-    removeExtraStats: function (array, iterations, calibrationDone){
 
+    removeExtraStats: function (array, iterations, calibrationDone){
 
         array.forEach(element => { 
             if (element.dateArray.length - 1 == iterations){ 
@@ -79,7 +74,6 @@ module.exports ={
             } 
             
         });
-
     },
 
     flushArray : function(array, calibrationDone) {
@@ -95,7 +89,21 @@ module.exports ={
             if(calibrationDone) element.waitingTimeArray =[];
             
         });
+    },
 
+    flushArrayExceptBrowserReady : function(array, calibrationDone) {
+        array.forEach(element => { 
+            element.dateArray =[];
+            element.readyArray.shift(); // Only remove first element
+            element.requestArray =[];
+            element.doneArray =[];
+            element.maxDelayArray =[];
+            element.errorArray =[];
+            element.browserFinishedArray =[];
+
+            if(calibrationDone) element.waitingTimeArray =[];
+            
+        });
     }
 
 }

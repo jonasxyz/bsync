@@ -1,24 +1,27 @@
-const fs = require('fs');
-const path = require('path');
-
 const configuration = {
+	activeWorker: "puppeteer", 							// Set this to "puppeteer" or "OpenWPM" or "native_firefox"
 
 	base: {
 		master_addr: "http://192.168.178.90:3000", 		// e.g. "http://localhost:3000"
-		pagevisit_duration: 3,							// specify time in seconds the browser stays on websites
+		pagevisit_duration: 6,							// Specify time in seconds the browser stays on websites
 
-		remote_filestorage : true,						// set true to store uploaded har data on the master server  //todo: not implemented yet
-		delete_after_upload : true,						// set true to delete the har files after upload
+		nfs_remote_filestorage: true,					// Set true to store har files on nfs server
+		delete_after_upload: true,						// Set true to delete the local har files after upload
+		nfs_server_address: "10.10.10.1",				// Address of the nfs server
+		nfs_server_path: "/nfs/bsync-Data/",			// Path to the nfs shared folder on the server
+
+
+		persistent_proxy: true,							// set true to keep the proxy running after the browser is closed
 	},
 	puppeteer: {
-		client_name: "puppeteer_HL", 						// must be unique
+		client_name: "puppeteer_HL", 					// must be unique
 		headless: true,
 
 		crawl_script: "puppeteer_synced.js", 
 		script_path: __dirname + "/puppeteer",
+		crawl_data_path: "/home/" + process.env.USERNAME +"/Downloads/Crawl-Data/",
 
-		enable_proxy : false, 							// set false to disable mitmproxy
-		//har_destination : "/home/user/Schreibtisch/HTTP/puppeteer/",		// old
+		enable_proxy : false, 							// Set false to disable mitmproxy
 		har_destination : "/home/" + process.env.USERNAME +"/Downloads/Crawl-Data/", // e.g. "/home/user/http/" //todo auf ubuntu18 funktioniet nur noch USER anstatt USERNAME
 		proxy_host : "127.0.0.1",
 		proxy_port : "3031",
@@ -36,21 +39,31 @@ const configuration = {
 		har_destination : "/home/" + process.env.USERNAME +"/Downloads/Crawl-Data/",
 		proxy_host : "127.0.0.1",
 		proxy_port : "3031",
+	},
+	native_firefox: {
+		client_name : "native_firefox", 
+		headless : false,
+
+		crawl_script : "firefox_launcher.js", 
+		script_path : __dirname + "/firefox_extension/POC_firefox_extension",
+
+		browser_path : "/opt/firefox-dev/firefox",		// Set path to firefox executable e.g. "/opt/firefox-dev/firefox"
+		browser_profile_path : "",
+		crawl_data_path: "/home/" + process.env.USERNAME +"/Downloads/Crawl-Data/",
+
+		enable_proxy : true,
+		har_destination : "/home/" + process.env.USERNAME +"/Downloads/Crawl-Data/",
+		proxy_host : "127.0.0.1",
+		proxy_port : "3031",
 	}
 }
 
 const activeConfig = {
 	base : configuration.base,
-	//worker : configuration.OpenWPM // set worker
-	worker : configuration.puppeteer 
+    worker: configuration[configuration.activeWorker],
 }
 
-
-const outputPath = path.join(__dirname, 'config.json'); // JSON output for OpenWPM settings
-fs.writeFileSync(outputPath, JSON.stringify(activeConfig, null, 2));
-
-
-// would be possible to switch between frameworks with settings different node environments
 module.exports = {
-	activeConfig
+	activeConfig,
+	activeWorker: configuration.activeWorker
 }

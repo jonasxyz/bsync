@@ -10,7 +10,13 @@ module.exports ={
     startLog : function (urlList, date, storagePath) {
 
         file = path.join(storagePath, "CRAWL_" + urlList.substr(0, urlList.lastIndexOf(".")) + "_" + date + ".csv");
-        fs.writeFileSync(file, "STATUS, ITERATION, CLIENT, DATE, READY AFTER(MS), WATINGTIME(MS), ESTIMATED ACCESS AFTER(MS), EXIT AFTER(MS), ESTIMATED MAX DELAY(MS)");
+        try {
+            fs.writeFileSync(file, "STATUS, ITERATION, CLIENT, DATE, READY AFTER(MS), WATINGTIME(MS), ESTIMATED ACCESS AFTER(MS), EXIT AFTER(MS), ESTIMATED MAX DELAY(MS)");
+        } catch (error) {
+            console.error("\x1b[31mERROR: " + "Error accessing storage path for writing log file:", "\x1b[0m");
+            console.error(error);
+
+        }
     },
     startLogTesting : function (date) {
 

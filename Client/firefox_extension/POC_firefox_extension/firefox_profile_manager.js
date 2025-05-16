@@ -96,6 +96,8 @@ user_pref("datareporting.policy.dataSubmissionEnabled", false);
 user_pref("app.shield.optoutstudies.enabled", false);
 user_pref("extensions.webextensions.uiTour.enabled", false);
 user_pref("browser.aboutConfig.showWarning", false);
+// Deactivate automatic translation dialog
+user_pref("browser.translations.automaticallyPopup", false);
 // Allow unsigned extensions for development
 user_pref("xpinstall.signatures.required", false);
 // Automatically accept extensions on installation

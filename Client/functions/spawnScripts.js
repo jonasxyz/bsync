@@ -626,7 +626,7 @@ module.exports =
                     proxy = spawn("mitmdump", [
                         "--listen-host=" + worker.proxy_host,
                         "--listen-port=" + worker.proxy_port, 
-                        "-s /home/user/Downloads/bsync/Client/proxyControllerSaveHar.py", // Load custom script to save HAR files and control proxy in runtime
+                        "-s /home/user/Downloads/bsync/Client/proxy/proxyControllerSaveHar.py", // Load custom script to save HAR files and control proxy in runtime
                         "-v",
                         "--set=console_eventlog_verbosity=info",
                         "--set=termlog_verbosity=warn",
@@ -675,6 +675,7 @@ module.exports =
                 const proxyOutput = err.toString();
 
                 console.log(colorize("MITMPROXY:", "magenta") + colorize(" error: ", "red") + proxyOutput);
+                console.log(colorize("MITMPROXY:", "magenta") + colorize(" errorNEU: ", "red") + err);
                 if (proxyOutput.includes("Error logged during startup")) {
                     console.log(colorize("MITMPROXY:", "magenta") + colorize(" Failed to start proxy", "red"));
                     reject(new Error("Another mitmproxy instance probably already running"));

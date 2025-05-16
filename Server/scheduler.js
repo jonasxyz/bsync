@@ -373,8 +373,10 @@ io.on("connection", socket => {
                 tempArray[arrayPosition].requestArray.push(estimatedRequest);
 
                 console.log("\x1b[34mCRAWLED:\x1b[0m", arrayClients[calibrationArrayPosition].workerName , "crawled URL", tempUrl , "finished\x1b[34m",
-                tempDateUrlDone , "ms\x1b[0m after distributing URL. Estimated Request\x1b[34m ",estimatedRequest , "ms\x1b[0m after distribution");
-
+                tempDateUrlDone , "ms\x1b[0m after distributing URL");
+                //console.log("\x1b[34mCRAWLED:\x1b[0m", arrayClients[calibrationArrayPosition].workerName , "crawled URL", tempUrl , "finished\x1b[34m",
+                    //tempDateUrlDone , "ms\x1b[0m after distributing URL. Estimated Request\x1b[34m ",estimatedRequest , "ms\x1b[0m after distribution");
+                    // Todo estimatedRequest not working
             }            
         }
   
@@ -413,7 +415,7 @@ io.on("connection", socket => {
                     console.log("INFO: " + "Estimated time to crawl " + numIterations + " websites is " + estimatedCrawlTime + "ms " + helperFunctions.msToHours(estimatedCrawlTime) + " hours.");
                     
                     initCalibrationDone = true;
-                    console.table(arrayClients) //debug
+                    //console.table(arrayClients) //debug
                 }
                
                 calibrationTime = 0;
@@ -431,7 +433,7 @@ io.on("connection", socket => {
             clearTimeout(browserDoneCountdown);
             doneTimeoutCounter = 0;
             urlsDone += 1;
-            console.log("incremented urlsDone: " + urlsDone); // debug
+            //console.log("incremented urlsDone: " + urlsDone); // debug
 
 
             //helperFunctions.checkArrayLengths(arrayStatistics, urlsDone, true); //debug
@@ -446,7 +448,7 @@ io.on("connection", socket => {
             logFunctions.logCrawling(arrayStatistics,urlsDone, tempUrl.toString());
             
             console.log("\x1b[33mSTATUS: \x1b[0m" + "URL " + urlsDone , " of " , numIterations + " done");
-            console.table(arrayStatistics);
+            //console.table(arrayStatistics);
             //statFunctions.flushArray(arrayStatistics, true); 
             statFunctions.flushArrayExceptBrowserReady(arrayStatistics, true); // todo check 26.11
 
@@ -485,7 +487,7 @@ io.on("connection", socket => {
 
     socket.on("browser_ready", (data)=> {   
 
-        console.log("browser_ready triggered");
+        //console.log("browser_ready triggered"); // debug
         if (activeClients != config.num_clients || ongoingCrawl == false) return;
 
         let tempName = socket.data.clientname.toString();

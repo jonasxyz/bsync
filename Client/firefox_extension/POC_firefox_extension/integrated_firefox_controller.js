@@ -30,6 +30,9 @@ const WS_PORT = 8765;
 const DEBUG = false;
 const isWindows = process.platform === 'win32';
 
+// Find zombie process
+// sudo lsof -i :8765
+
 // Firefox configuration - dynamically from config or fallback
 const FIREFOX_PATH = worker.browser_path || (isWindows 
   ? "C:\\Program Files\\Firefox Developer Edition\\firefox.exe" 

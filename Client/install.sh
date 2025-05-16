@@ -139,10 +139,14 @@ if [ "$1" != "--no-puppeteer" ]; then
 
 	# SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"  TODO moved to front
 	# SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" # some cases not working
-	echo "Installting npm packages in directory $SCRIPT_DIR"
+	echo "Installing npm packages in directory $SCRIPT_DIR"
+	cd "$SCRIPT_DIR/Client"  # todo currently only works after restarting script
+
 	sudo npm install
 
 	cd "$SCRIPT_DIR/puppeteer"
+
+	npx puppeteer browsers install chrome
 	
 	echo "Start puppeteer for generating CA cert destination "
 	node puppeteer_synced.js &

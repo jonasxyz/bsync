@@ -626,12 +626,13 @@ module.exports =
                     proxy = spawn("mitmdump", [
                         "--listen-host=" + worker.proxy_host,
                         "--listen-port=" + worker.proxy_port, 
-                        "-s /home/user/Downloads/bsync/Client/proxy/proxyControllerSaveHar.py", // Load custom script to save HAR files and control proxy in runtime
+                        // Load custom script to save HAR files and control proxy in runtime
+                        "-s /home/user/Downloads/bsync/Client/proxy/proxyController.py",
                         "-v",
                         "--set=console_eventlog_verbosity=info",
                         "--set=termlog_verbosity=warn",
                         //"--set=hardump=" + fileSaveDir + replaceDotWithUnderscore(clearUrl) + ".har" // alt
-                        // TODO brazuche ich das irgendwann?
+                        // TODO for bugfixing
                         //"--dumper_filter=" + config.activeConfig.base.master_addr + "*",
                         //"--ignore_hosts " + "\'" + config.activeConfig.base.master_addr + "\'",
                         //"--ignore-hosts=" + masterDomain + ",*." + masterDomain, // Dont log requests to master server 

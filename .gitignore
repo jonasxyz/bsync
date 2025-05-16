@@ -163,6 +163,3 @@ harAnalysis/*
 
 # Helper
 Helper/*
-
-# testing
-Client/proxyController.py

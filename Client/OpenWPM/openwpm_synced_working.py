@@ -25,31 +25,6 @@ from openwpm.config import BrowserParams, ManagerParams
 from openwpm.storage.sql_provider import SQLiteStorageProvider
 from openwpm.task_manager import TaskManager
 
-# For local custom commands
-from openwpm.commands.types import BaseCommand
-from selenium.webdriver.remote.webdriver import WebDriver
-
-from openwpm.utilities.platform_utils import get_version  # Import the function
-
-import json # for environment info
-
-
-# Retrieve OpenWPM and Firefox version
-openwpm_version, firefox_version = get_version()
-print(f"OpenWPM Version: {openwpm_version}")
-print(f"Firefox Version: {firefox_version}")
-
-# Define the custom command within this file
-class GetUserAgentCommand(BaseCommand):
-    def __init__(self):
-        super().__init__()
-
-    def execute(self, webdriver: WebDriver, *args, **kwargs):
-        # Execute JavaScript to get the user agent
-        user_agent = webdriver.execute_script("return navigator.userAgent;")
-        print(f"User Agent: {user_agent}")
-
-
 parser = argparse.ArgumentParser()
 parser.add_argument("--headless", action="store_true", default=False)
 parser.add_argument("--crawldatapath", type=str, default="./datadir/", help="set location for OpenWPMs generated crawl data")
@@ -72,46 +47,6 @@ if args.headless:
 NUM_BROWSERS = 1
 manager_params = ManagerParams(num_browsers=NUM_BROWSERS)
 browser_params = [BrowserParams(display_mode=display_mode) for _ in range(NUM_BROWSERS)]
-
-# Print browser configuration
-for i, browser_param in enumerate(browser_params):
-    print(f"Browser {i} Configuration:")
-    #print(json.dumps(browser_param.to_dict(), indent=2))
-
-# # Convert `bytes` objects to strings immediately
-# data_to_send = {
-#     #"openwpm_version": openwpm_version.decode('utf-8') if isinstance(openwpm_version, bytes) else openwpm_version,
-#     #"firefox_version": firefox_version.decode('utf-8') if isinstance(firefox_version, bytes) else firefox_version,
-#     "user_agent": "Example User Agent"  # Replace with actual data
-#     # Add any other relevant data fields here
-# }
-
-# # Output single line: marker and JSON data
-# sys.stdout.write(f"CRAWLER_ENV_INFO {json.dumps(data_to_send)}")
-# sys.stdout.flush()
-
-
-def send_crawler_env_info():
-    data_to_send = {
-        "user_agent": "Example User Agent",
-        # Add other key-value pairs as needed
-    }
-    
-    # Convert the dictionary to a JSON string
-    json_data = json.dumps(data_to_send)
-    
-    # Print the JSON data with the required prefix
-    # Ensure no extra characters are added
-    #print(f"CRAWLER_ENV_INFO {json_data}")
-
-    sys.stdout.write(f"CRAWLER_ENV_INFO {json_data}")
-    sys.stdout.flush()
-
-
-
-# Call the function to send the data
-send_crawler_env_info()
-
 
 # Update browser configuration (use this for per-browser settings)
 for browser_param in browser_params:
@@ -138,9 +73,6 @@ for browser_param in browser_params:
         browser_param.prefs["network.proxy.type"] = 1
         browser_param.prefs["network.proxy.ssl"] = args.proxyhost
         browser_param.prefs["network.proxy.ssl_port"] = args.proxyport
-        sys.stdout.write(f"Proxy set to {args.proxyhost}:{str(args.proxyport)}\n")
-        sys.stdout.flush()
-
 
      # TODO temp preferences
     browser_param.prefs["browser.cache.disk.enable"] = False
@@ -185,9 +117,7 @@ def process_url(manager, url, useragent=None, waitingtime=0, index=0):
     if useragent:
         for browser_param in browser_params:
             browser_param.prefs["general.useragent.override"] = useragent
-            sys.stdout.write(f"Useragent set to {useragent}\n")
-            sys.stdout.flush()
-
+    
     def callback(success: bool, val: str = url) -> None:
         print(
             f"CommandSequence for {val} ran {'successfully' if success else 'unsuccessfully'}"
@@ -252,8 +182,8 @@ def restart_browser(manager, browser_id):
 def wait_for_url(manager, index):
     """Function to wait for a new URL command."""
     
-    #sys.stdout.write("browserready\n")
-    #sys.stdout.flush()
+    sys.stdout.write("browserready\n")
+    sys.stdout.flush()
 
     while True:
         # Wait for signal and URL
@@ -312,63 +242,48 @@ with TaskManager(
 ) as manager:
     sys.stdout.write("as Manager called\n")
 
-    check_browsers_ready(manager) # Triggers with first start of the browser
+    check_browsers_ready(manager)
 
     # Main loop to process stdin commands
     for line in sys.stdin: # try only loop when stdin input
         line = line.strip()
-        if line.startswith("visit_url"):
+        if line.startswith("visiturl"):
     # Continuously read URLs from stdin and process them
     # while True:
     #     line = sys.stdin.readline().strip()
     #     if line.startswith("visiturl"):
             try:
                 # Parse the JSON object passed with visiturl
-                data = json.loads(line[len("visit_url"):])
+                data = json.loads(line[len("visiturl "):])
                 url = data.get("url")
-                useragent = data.get("userAgent")
-                waitingtime = data.get("waitingTime", 0)
-
-                sys.stdout.write(f"data: {data}\n") # DEBUG
-                sys.stdout.flush()
+                useragent = data.get("useragent")
+                waitingtime = data.get("waitingtime", 0)
 
                 if url:
-                    sys.stdout.write("visit_url signal received\n")
-                    sys.stdout.flush()
-                    if useragent:
-                        for browser_param in browser_params:
-                            browser_param.prefs["general.useragent.override"] = useragent
-                            sys.stdout.write(f"Useragent set to {useragent}\n")
-                            sys.stdout.flush()
-
                     def callback(success: bool, val: str = url) -> None:
                         print(
                             f"CommandSequence for {val} ran {'successfully' if success else 'unsuccessfully'}"
                         )
                         if not success:
-                            sys.stdout.write("CommandSequence ran unsuccessfully")
+                            sys.stdout.write("CommandSequence ran unsuccessfully\n")
                             sys.stdout.flush()
                         else:
                             # After the URL is processed
-                            sys.stdout.write("BROWSER_FINISHED\n")
+                            sys.stdout.write("browserfinished\n")
                             sys.stdout.flush()
-                            #if not args.reset: # If reset is false, check if all browsers are ready
-                                #check_browsers_ready(manager)
-                            
 
                     # Signalize that browser is ready for visiting URL
-                    #sys.stdout.write("browserready\n")
-                    #sys.stdout.flush()
+                    sys.stdout.write("browserready\n")
+                    sys.stdout.flush()
                     
                     # Create a CommandSequence for the provided URL
                     command_sequence = CommandSequence(
                         url,
-                        #reset=args.reset, # Not working with OpenWPM v0.29.0, using restart_browser_manager manually
+                        reset=args.reset,
                         #blocking=True,
                         site_rank=0,  # Site rank is not important here, so setting to 0
                         callback=callback,
                     )
-                    #command_sequence.append_command(GetUserAgentCommand(), timeout=10)
 
                     # Visit the page
                     command_sequence.append_command(GetCommand(url=url, sleep=args.stay), timeout=60)
@@ -376,9 +291,6 @@ with TaskManager(
                     sys.stdout.write(f"visiting {url}\n")
                     # Execute the command sequence
                     manager.execute_command_sequence(command_sequence)
-
-                    sys.stdout.write("URL_DONE\n") # Todo checken ob browser_finished nicht besser im Timing
-                    sys.stdout.flush()
 
             except json.JSONDecodeError:
                 print("Failed to parse JSON from input. Please ensure it's correctly formatted.")
@@ -410,7 +322,3 @@ with TaskManager(
                     else:
                         print(f"Failed to restart browser {browser_id}")
                 check_browsers_ready(manager)
-        elif line == "check_readiness":
-            #print("Browser ready status: ", manager.browsers[0].isConnected())
-            sys.stdout.write("browser_ready")
-            sys.stdout.flush()

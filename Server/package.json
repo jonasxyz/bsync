@@ -18,6 +18,7 @@
   "homepage": "https://github.com/jonasxyz/bsync#readme",
   "dependencies": {
     "express": "^4.17.2",
+    "multer": "^1.4.5-lts.1",
     "prompt": "^1.2.1",
     "socket.io": "^4.4.1"
   }

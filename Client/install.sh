@@ -139,10 +139,14 @@ if [ "$1" != "--no-puppeteer" ]; then
 
 	# SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"  TODO moved to front
 	# SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" # some cases not working
-	echo "Installting npm packages in directory $SCRIPT_DIR"
+	echo "Installing npm packages in directory $SCRIPT_DIR"
+	cd "$SCRIPT_DIR/Client"  # todo currently only works after restarting script
+
 	sudo npm install
 
 	cd "$SCRIPT_DIR/puppeteer"
+
+	npx puppeteer browsers install chrome
 	
 	echo "Start puppeteer for generating CA cert destination "
 	node puppeteer_synced.js &
@@ -190,5 +194,17 @@ if [ "$1" != "--no-openwpm" ]; then
 	cp $SCRIPT_DIR/OpenWPM/openwpm_synced.py /home/$USER/Desktop/OpenWPM/ # TODO Test
 	
 fi
+
+# Install dev Tools for remote deployment
+# sudo apt install openssh-server
+# sudo apt-get install tmux
+
+# sudo systemctl start ssh
+# sudo systemctl enable ssh
+# sudo nano /etc/ssh/sshd_config
+# sudo ufw allow ssh
+# sudo ufw enable
+# sudo systemctl restart ssh
+
 
 echo "All installations are complete!"

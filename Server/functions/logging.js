@@ -7,14 +7,20 @@ var file = "";
 
 module.exports ={
 
-    startLog : function (urlList, date) {
+    startLog : function (urlList, date, storagePath) {
 
-        file = "CRAWL_" + urlList.substr(0, urlList.lastIndexOf(".")) + date + ".csv";
-        fs.writeFileSync(file, "STATUS, ITERATION, CLIENT, DATE, READY AFTER(MS), WATINGTIME(MS), ESTIMATED ACCESS AFTER(MS), ESTIMATED MAX DELAY(MS)");
+        file = path.join(storagePath, "CRAWL_" + urlList.substr(0, urlList.lastIndexOf(".")) + "_" + date + ".csv");
+        try {
+            fs.writeFileSync(file, "STATUS, ITERATION, CLIENT, DATE, READY AFTER(MS), WATINGTIME(MS), ESTIMATED ACCESS AFTER(MS), EXIT AFTER(MS), ESTIMATED MAX DELAY(MS)");
+        } catch (error) {
+            console.error("\x1b[31mERROR: " + "Error accessing storage path for writing log file:", "\x1b[0m");
+            console.error(error);
+
+        }
     },
     startLogTesting : function (date) {
 
-        file = "TESTCRAWL_" + date + ".csv";
+        file = storagePath, "TESTCRAWL_" + date + ".csv";
         fs.writeFileSync(file, "STATUS, ITERATION, CLIENT, DATE, READY AFTER(MS), WATINGTIME(MS), REQUEST AFTER(MS), DONE AFTER(MS), MAX DELAY(MS)");
     },
     logTesting : function (array, urlsDone) {
@@ -26,15 +32,27 @@ module.exports ={
     },
     logCalibration : function (array, iterations) {
 
-        array.forEach(element => fs.appendFileSync(file, "\r\n"+"CALIBRATION" +", " + "#" + iterations + ","+ element.workerName+ "," + element.dateArray[iterations] + ", " + element.readyArray[iterations]
+        array.forEach(element => fs.appendFileSync(file, "\r\n"+"CALIBRATION" +", " + "#" + (iterations+1) + ","+ element.workerName+ "," + element.dateArray[iterations] + ", " + element.readyArray[iterations]
         + ", " + 0 + ", " +element.requestArray[iterations] + ", " + element.doneArray[iterations] + ", " + element.maxDelayArray[iterations]));
     },
-    logCrawling : function (array, urlsDone) {
+    logCrawling2 : function (array, urlsDone) {
 
         //var arrayField = urlsDone-1
         array.forEach(element => fs.appendFileSync(file, "\r\n"+"CRAWLED" +", " +"url#" + urlsDone + ", " + element.workerName+ ", " + element.dateArray[0] + ", " + element.readyArray[0]
-        + ", " + element.waitingTimeArray[0]+ ", " + element.requestArray[0] + ", " + element.doneArray[0] + ", " + element.maxDelayArray[0]));
+        + ", " + element.waitingTimeArray[0]+ ", " + element.requestArray[0] + ", " + element.doneArray[0] + ", " + element.maxDelayArray[0]  + ", " + element.errorArray[0]));
 
+    },
+    logCrawling: function (array, urlsDone) {
+        array.forEach(element => {
+            let logMessage = "\r\n" + "CRAWLED" + ", " + "url#" + urlsDone + ", " + element.workerName + ", " + element.dateArray[0] + ", " + element.readyArray[0]
+                + ", " + element.waitingTimeArray[0] + ", " + element.requestArray[0] + ", " + element.browserFinishedArray[0] + ", " + element.maxDelayArray[0];
+    
+                if (element.errorArray && element.errorArray.length > 0) {
+                    logMessage += ", " + element.errorArray[0];
+                }
+    
+            fs.appendFileSync(file, logMessage);
+        });
     },
     logDisconnect : function(client, date){
         fs.appendFileSync(file, "\r\n"+"ERROR" +", " + "disconnect" +", " + client +", " + date);
@@ -61,7 +79,11 @@ module.exports ={
         
     },
     skipUrl : function(url, urlsDone, date){
-        fs.appendFileSync(file, "\r\n"+"STATUS SKIPURL" +", " +"url#" + urlsDone + ", " + url + ", " + date) ;
+        fs.appendFileSync(file, "\r\n"+"SKIPURL" +", " +"url#" + urlsDone + ", " + url + ", " + date) ;
+
+    },
+    newUrl : function(url, urlsDone, date){
+        fs.appendFileSync(file, "\r\n"+"NEXTURL" +", " +"url#" + urlsDone + " " + url +  ", " +  ", " + date) ;
 
     }
 }

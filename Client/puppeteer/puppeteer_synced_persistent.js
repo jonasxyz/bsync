@@ -32,21 +32,13 @@ async function launchBrowser() {
         userDataDir: userDataDir, 
         //product: 'firefox', // WebDriver BiDi is used by default.
         args:
-            //[proxyArg, "--start-maximized", "--window-size=1920,1080", "--disable-gpu", "--no-sandbox"].filter(Boolean),
-            [proxyArg, "---start-fullscreen"].filter(Boolean),
+            [proxyArg].filter(Boolean),
+            // "--start-maximized" todo funktioniert nur wenn proxyArg nicht da ist
+        
     });
 
     // page = await browser.newPage();
     page = (await browser.pages())[0]; // Use the already opened tab
-    
-    // Todo unify screen size with other frameworks
-    // Set the viewport to the maximum size
-    // await page.setViewport({
-    //     width: 1920,
-    //     height: 1080,
-    //     deviceScaleFactor: 1,
-    // });
-    
     // console.log("Browser launched");
     process.stdout.write("browser_ready");
 
@@ -78,25 +70,25 @@ async function visitUrl(url, useragent, waitingtime = 0, stayTime = 3, restart =
         await resetBrowser(); 
     } else {
 
-        // Navigate to about:blank to stop all processes
+        // Navigiere zu about:blank, um alle laufenden Prozesse zu stoppen
         console.log("\nNavigating to about:blank to stop all processes");
         await page.goto('about:blank', { waitUntil: 'load' }).catch(e => 
             console.error("Error navigating to about:blank:", e));
             
-        // Wait for Network Idle
+        // Warte auf Network Idle
         //await page.waitForNetworkIdle({idleTime: 1000, timeout: 5000}).catch(e => console.error("Network idle timeout: ", e));
 
-        // Open new tab
+        // Öffne einen neuen Tab
         // console.log("Opening new tab");
         // const newPage = await browser.newPage();
         
-        // Save reference to the old tab
+        // Speichere Referenz auf den alten Tab
         // const oldPage = page;
         
-        // Switch to the new tab
+        // Wechsle zum neuen Tab
         // page = newPage;
         
-        // Close the old tab after the new tab is active
+        // Schließe den alten Tab erst nachdem der neue Tab aktiv ist
         // console.log("Closing previous tab");
         // await oldPage.close().catch(e => console.error("Error closing tab:", e));
 
@@ -118,7 +110,7 @@ async function resetBrowser() {
     process.stdout.write("BROWSER_FINISHED");
 
 
-    // If a user-defined data path is used, do not delete the directory
+    // Wenn ein benutzerdefinierter Datenpfad verwendet wird, das Verzeichnis nicht löschen
     if (!datapath && userDataDir) {
         try {
             if (fs.existsSync(userDataDir)) {
@@ -130,7 +122,7 @@ async function resetBrowser() {
         }
     }
 
-    // If no user-defined data path is set, use a new temporary path
+    // Falls kein benutzerdefinierter Datenpfad gesetzt wurde, verwende einen neuen temporären Pfad
     // if (!datapath) {
     //     userDataDir = path.join(os.tmpdir(), `puppeteer_profile_${Date.now()}`);
     //     console.log(`Using new profile directory: ${userDataDir}`);

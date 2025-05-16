@@ -149,8 +149,17 @@ todo.txt
 *.pyc
 *.cpython.38.pyc
 Client/Testing/*
-Client/configV1.js
-Client/config.json
 Client/config.json
 Client/puppeteer/puppeteer_synced copy.js
-Client/config.json
+Server/deploy.sh
+Client/config.js
+Client/config_copy.js
+Server/CrawlData/.*
+*.har
+Server/DeployChangesOverwrite.sh
+
+# harAnalysis
+harAnalysis/*
+
+# Helper
+Helper/*

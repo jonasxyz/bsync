@@ -157,3 +157,12 @@ Client/config_copy.js
 Server/CrawlData/.*
 *.har
 Server/DeployChangesOverwrite.sh
+
+# harAnalysis
+harAnalysis/*
+
+# Helper
+Helper/*
+
+# testing
+Client/proxyController.py

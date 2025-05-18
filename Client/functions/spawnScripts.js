@@ -1115,10 +1115,9 @@ function checkBackslash(str) {
     }
 }
 
-// Replace dots with underscores in URL for file naming
+// Replace all characters that could be problematic in file paths
 function replaceDotWithUnderscore(str) {
-
-    return str.replace(/\./g, '_');
+    return str.replace(/\//g, '-').replace(/[\.:?&=]/g, '_');
 }
 
 function colorize(text, color) {

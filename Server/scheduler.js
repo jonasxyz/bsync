@@ -1,27 +1,20 @@
+var config = require('./config.js');
 var statFunctions = require('./functions/statFunctions.js');
 var logFunctions = require('./functions/logging.js');
 var helperFunctions = require('./functions/helper.js');
 
 var serverFunctions = require('./functions/server.js');
-const { app, server} = require('./functions/server.js');
+const {server} = require('./functions/server.js');
 
 
-
-var config = require('./config.js');
 const { logMessage } = require('./functions/helper.js');
-
-var prompt = require('prompt');
 const fs = require('fs');
 
-
-const multer = require('multer');
-//const express = require('express');
-//const app = express();
 
 var io = require("socket.io")(server);
 const path = require('path');
 
-process.env.TZ = 'Europe/Amsterdam'; // DEBUG
+//process.env.TZ = 'Europe/Amsterdam'; // DEBUG
 
 var arrayClients = []; // Stores connected workers and data for calibration
 var arrayStatistics = []; // Stores data while crawling
@@ -54,8 +47,6 @@ var errorHandler = require('./functions/errorHandler.js');
 
 const timeoutHandlers = errorHandler(context);
 
-
-//var activeClients = 0, urlsDone = 0, pingOkay = 0, testsDone = 0, browsersReady = 0, pendingJobs  = 0; // counters
 var activeClients = 0;
 var urlsDone = 0;
 var pingOkay = 0;
@@ -75,7 +66,6 @@ var isAnswered = false;
 
 var fresh_initialization = true; // todo noch checken wie es ist wenn framework neu gestartet werden muss. und wieder initcrawl kommt
 
-
 var tempUrl;
 var numIterations;
 var calibrationTime;
@@ -90,7 +80,7 @@ var slowestReady;
 var browserReadyCountdown;
 var browserDoneCountdown;
 
-var readyTimeoutCounter; // todo wenn browser x mal nicht ready wird crawl beenden oder option einfügen den crawl mit einem worker weniger fortzusetzen
+var readyTimeoutCounter; // Todo  wenn browser x mal nicht ready wird crawl beenden oder option einfügen den crawl mit einem worker weniger fortzusetzen
 var doneTimeoutCounter;
 
 var rootDirPath;
@@ -124,7 +114,7 @@ io.on("connection", socket => {
     // Counter for connected clients
     activeClients+=1; 
 
-    // Send number of connected workers to each client //todo unnötig entfernen
+    // Send number of connected workers to each client //Todo unnötig entfernen
     io.to(socket.id).emit("numclients", config.num_clients); 
     
     // Send crawl timestamp to each client for har remote storage
@@ -218,7 +208,7 @@ io.on("connection", socket => {
         clearTimeout(browserReadyCountdown);
         clearTimeout(browserDoneCountdown);
 
-        // search array for disconnected client id and remove element
+        // Search array for disconnected client id and remove element
         // arrayClients.splice(statFunctions.searchArray(arrayClients, socket.id.toString(), 2), 1); 
         arrayClients.splice(tempId, 1); 
 

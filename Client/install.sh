@@ -121,6 +121,8 @@ sudo apt-get install -y python3 python3-pip
 echo "Installing mitmproxy..."
 sudo pip3 install mitmproxy # --break-system-packages # allow system-wide installation
 
+pip install websockets # todo check if this installs in mamba env. Needs to be installed in normal python env.
+
 # Start mitmproxy for CA certificate generation
 echo "Starting mitmproxy"
 mitmdump &
@@ -146,7 +148,9 @@ if [ "$1" != "--no-puppeteer" ]; then
 
 	cd "$SCRIPT_DIR/puppeteer"
 
-	npx puppeteer browsers install chrome
+	# npx puppeteer browsers install chrome # Foxusing on Firefox
+	echo "Installing Firefox for Puppeteer (version stable_138.0.1)..."
+	npx @puppeteer/browsers install firefox@stable_138.0.1
 	
 	echo "Start puppeteer for generating CA cert destination "
 	node puppeteer_synced.js &

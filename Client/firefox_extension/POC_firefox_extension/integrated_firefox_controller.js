@@ -26,12 +26,12 @@ try {
 }
 
 // Configuration
-const WS_PORT = 8765;
+const WS_PORT = 3001;
 const DEBUG = false;
 const isWindows = process.platform === 'win32';
 
 // Find zombie process
-// sudo lsof -i :8765
+// sudo lsof -i :3001
 
 // Firefox configuration - dynamically from config or fallback
 const FIREFOX_PATH = worker.browser_path || (isWindows 

@@ -1,6 +1,6 @@
 // WebSocket connection to Node.js server
 let socket = null;
-const WS_SERVER = 'ws://localhost:8765';
+const WS_SERVER = 'ws://localhost:3001';
 
 // Current state
 let currentUrl = null;

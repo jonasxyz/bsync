@@ -1,3 +1,10 @@
+/**
+ * @file Client/worker.js
+ * @description Worker client script. Connects to the master server to perform web crawling tasks.
+ * It receives URLs and manages an automation framework (e.g., Puppeteer, OpenWPM, regular Firefox controlled with an extension)
+ * as subprocess to visit these URLs. It collects data and can manage capturing processes like proxies.
+ * Communication with the master server for instructions and status updates is done via Socket.IO.
+ */
 const io = require("socket.io-client");
 const fs = require('fs');
 var spawnedScripts = require("./functions/spawnScripts.js");
@@ -10,8 +17,6 @@ const baseConfig = config.activeConfig.base;
 //var config = require("../config_openwpm.js");
 
 const { colorize } = require("./functions/spawnScripts.js"); // Colorize function for terminal output
-
-
 
 const dirName = 0;
 

@@ -1,3 +1,9 @@
+/**
+ * @file Server/scheduler.js
+ * @description Master server (scheduler) for a distributed web crawling system.
+ * Manages connections to worker clients via Socket.IO and distributes crawling tasks (URLs).
+ * Coordinates the crawling process, including worker calibration, URL dispatch, status tracking, and error handling.
+ */
 var config = require('./config.js');
 var statFunctions = require('./functions/statFunctions.js');
 var logFunctions = require('./functions/logging.js');

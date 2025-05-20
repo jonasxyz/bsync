@@ -146,7 +146,9 @@ if [ "$1" != "--no-puppeteer" ]; then
 
 	cd "$SCRIPT_DIR/puppeteer"
 
-	npx puppeteer browsers install chrome
+	# npx puppeteer browsers install chrome # Focusing on Firefox
+	echo "Installing Firefox for Puppeteer (version stable_138.0.1)..."
+	npx @puppeteer/browsers install firefox@stable_138.0.1
 	
 	echo "Start puppeteer for generating CA cert destination "
 	node puppeteer_synced.js &

@@ -1,3 +1,12 @@
+/****************************************************************************
+ * puppeteer_synced.js
+ *
+ * Puppeteer script for browser automation, integrated with the bsync synchronization
+ * framework. Handles proxy settings, headless mode and remote commands for visiting URLs.
+ * 
+ * 
+ ****************************************************************************/
+
 const puppeteer = require('puppeteer');
 const minimist = require('minimist');
 const readline = require('readline');
@@ -30,14 +39,16 @@ async function launchBrowser() {
         headless: headless,
         ignoreHTTPSErrors: true,
         userDataDir: userDataDir, 
-        //product: 'firefox', // WebDriver BiDi is used by default.
+        browser: 'firefox', // WebDriver BiDi is used by default.
+        // Manual installation: npx @puppeteer/browsers install firefox@stable_138.0.1
+        executablePath: '/home/' + os.userInfo().username + '/Downloads/bsync/Client/firefox/stable_138.0.1/firefox/firefox',
         args:
             //[proxyArg, "--start-maximized", "--window-size=1920,1080", "--disable-gpu", "--no-sandbox"].filter(Boolean),
             [proxyArg, "---start-fullscreen"].filter(Boolean),
     });
 
-    // page = await browser.newPage();
-    page = (await browser.pages())[0]; // Use the already opened tab
+    // Use the already opened tab
+    page = (await browser.pages())[0]; 
     
     // Todo unify screen size with other frameworks
     // Set the viewport to the maximum size
@@ -52,11 +63,11 @@ async function launchBrowser() {
 
 }
 
-async function visitUrl(url, useragent, waitingtime = 0, stayTime = 3, restart = false) {
-    if (useragent) {
-        await page.setUserAgent(useragent);
-        console.log(`Useragent set to ${useragent}`);
-    }
+async function visitUrl(url, waitingtime = 0, stayTime = 3, restart = false) {
+    // if (useragent) {
+    //     await page.setUserAgent(useragent);
+    //     console.log(`Useragent set to ${useragent}`);
+    // }
 
     if (waitingtime > 0) {
         console.log(`Waiting ${waitingtime} ms before visiting ${url}`);
@@ -163,14 +174,14 @@ async function resetBrowser() {
             }
     
             const url = data.url;
-            const useragent = data.userAgent;
+            // const useragent = data.userAgent;
             const waitingtime = data.waitingtime || 0;
             const stayTime = data.stayTime || 3; 
             const restart = data.restart || false;
     
             if (url) {
                 //console.log("useragent cor aiwati: ", useragent); // DEBUG
-                await visitUrl(url, useragent, waitingtime, stayTime, restart).then(() => {
+                await visitUrl(url, waitingtime, stayTime, restart).then(() => {
                     console.log("Finished visiting URL");
 
                     process.stdout.write("BROWSER_FINISHED");

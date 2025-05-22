@@ -20,6 +20,7 @@ const configuration = {
 
 		crawl_script: "puppeteer_synced.js", 
 		script_path: __dirname + "/puppeteer",
+		browser_path : "/opt/firefox-138.0.1/firefox",
 		crawl_data_path: "/home/" + os.userInfo().username +"/Downloads/Crawl-Data/",
 
 		enable_proxy : true, 							// Set false to disable mitmproxy
@@ -47,7 +48,7 @@ const configuration = {
 		crawl_script : "integrated_firefox_controller.js", 
 		script_path : __dirname + "/firefox_extension/POC_firefox_extension",
 
-		browser_path : "/opt/firefox-dev/firefox",		// Set path to firefox executable e.g. "/opt/firefox-dev/firefox"
+		browser_path : "/opt/firefox-138.0.1/firefox",		// Set path to firefox executable e.g. "/opt/firefox-dev/firefox"
 		browser_profile_path : "",
 		crawl_data_path: "/home/" + os.userInfo().username +"/Downloads/Crawl-Data/",
 

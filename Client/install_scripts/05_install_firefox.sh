@@ -47,13 +47,14 @@ echo "Extracting $FIREFOX_TARBALL to /opt/ ..."
 if [ ! -d "/opt" ]; then
     sudo mkdir -p "/opt"
 fi
-# Remove existing installation directory if it exists from a failed previous attempt
+# Ensure the specific versioned install directory exists and is empty
 if [ -d "$INSTALL_DIR" ]; then
-    echo "Removing existing incomplete installation directory: $INSTALL_DIR"
+    echo "Removing existing installation directory: $INSTALL_DIR"
     sudo rm -rf "$INSTALL_DIR"
 fi
+sudo mkdir -p "$INSTALL_DIR" # Ensure INSTALL_DIR exists
 
-if sudo tar -xJf "$DOWNLOAD_DIR/$FIREFOX_TARBALL" -C /opt/; then
+if sudo tar -xJf "$DOWNLOAD_DIR/$FIREFOX_TARBALL" -C "$INSTALL_DIR" --strip-components=1; then
     echo "Extraction successful to $INSTALL_DIR."
 else
     echo "ERROR: Failed to extract Firefox tarball."

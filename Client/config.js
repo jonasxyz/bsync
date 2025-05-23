@@ -11,8 +11,8 @@ const configuration = {
 		nfs_server_address: "10.10.10.1",				// Address of the nfs server
 		nfs_server_path: "/nfs/bsync-Data/",			// Path to the nfs shared folder on the server
 
-
 		persistent_proxy: true,							// set true to keep the proxy running after the browser is closed
+		proxy_debug_output: false,						// Set true to show all proxy stdout output, false to show only processed IPC messages
 	},
 	puppeteer: {
 		client_name: "puppeteer", 						// must be unique

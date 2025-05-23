@@ -37,10 +37,28 @@ from mitmproxy.utils import strutils
 
 logger = logging.getLogger(__name__)
 
+def send_ipc_message(message_type: str, data: dict = None, debug_msg: str = None):
+    """Send structured JSON message for IPC communication with Node.js"""
+    message = {
+        "type": message_type,
+        "timestamp": datetime.now().isoformat(),
+        "data": data or {}
+    }
+    
+    if debug_msg:
+        message["debug"] = debug_msg
+    
+    # Send JSON message with special prefix for easy detection
+    print(f"IPC_JSON:{json.dumps(message)}", flush=True)
+
 class SaveHarCustom:
     def __init__(self) -> None:
         self.flows: list[flow.Flow] = []
         self.filt: flowfilter.TFilter | None = None
+        
+        # Counter for requests in current iteration
+        self.request_count = 0
+        self.iteration_active = False
 
     # meins
         self.save_path = "/home/user/Downloads/testhttpdump.har"
@@ -50,11 +68,12 @@ class SaveHarCustom:
     @command.command("save.har")
     def export_har(self, flows: Sequence[flow.Flow], path: types.Path) -> None:
         """Export flows to an HAR (HTTP Archive) file."""
-        print("IPC_Starting HAR export...", flush=True) # meins
+        send_ipc_message("har_export_started", {"flows_count": len(flows)})
 
         har = json.dumps(self.make_har(flows), indent=4).encode()
 
-        if PROXY_DEBUG: print("IPC_IN_HAR_EXPORT_PROCESS", flush=True)
+        if PROXY_DEBUG: 
+            send_ipc_message("debug", {"message": "IN_HAR_EXPORT_PROCESS"})
 
         if path.endswith(".zhar"):
             har = zlib.compress(har, 9)
@@ -62,51 +81,60 @@ class SaveHarCustom:
         with open(path, "wb") as f:
             f.write(har)
 
-        # wird immer geprintet, not sure
-        if PROXY_DEBUG: print(f"IPC_Flows count after export: {len(self.flows)}", flush=True)
-
-
-        # logging.log(ALERT, f"HAR file saved ({human.pretty_size(len(har))} bytes).")
-
         # Clear flows after export
+        flows_before_clear = len(self.flows)
         self.flows = []
-        if PROXY_DEBUG: print(f"IPC_Flows cleared after export: {len(self.flows)}", flush=True)
-
+        
+        send_ipc_message("har_export_completed", {
+            "file_path": path,
+            "file_size": len(har),
+            "flows_before_clear": flows_before_clear,
+            "flows_after_clear": len(self.flows)
+        })
+        
+        # Reset request counter for new iteration
+        self.request_count = 0
+        self.iteration_active = True
 
 
     def request(self, flow: http.HTTPFlow) -> None:
-        # """Handle shutdown request via HTTP"""
-        # if flow.request.pretty_url == "http://shutdown.proxy.local/":
-        #     print("PROXY_SHUTDOWN_REQUESTED_HTTP", flush=True)
-        #     ctx.master.shutdown()
 
         """Handle shutdown request via HTTP"""
-        if flow.request.pretty_url == "http://harddump.proxy.local/":
-            print("IPC_PROXY_HARDUMP_REQUESTED_HTTP", flush=True)
-            # call export_har
-            #ctx.options.hardump = "-"
-            if PROXY_DEBUG: print(f"IPC_Current flows count: {len(self.flows)}", flush=True)
+        if flow.request.pretty_url == "http://shutdown.proxy.local/":
+            send_ipc_message("proxy_shutdown_requested", {
+                "message": "Graceful shutdown requested via HTTP",
+                "flows_count": len(self.flows)
+            })
+            
+            # Perform cleanup before shutdown
+            if self.flows:
+                send_ipc_message("debug", {
+                    "message": f"Clearing {len(self.flows)} flows before shutdown"
+                })
+                self.flows = []
+            
+            # Shutdown the proxy
+            ctx.master.shutdown()
+            send_ipc_message("proxy_shutdown_requested", {
+                "message": "Graceful shutdown tried via HTTP",
+                "flows_count": len(self.flows)
+            })
+            return
 
-            #self._save_flow(flow) todo vielleicht ist das doch nötig für full har export
-            #print(f"IPC_Flows count after save: {len(self.flows)}", flush=True)
+        """Handle hardump request via HTTP"""
+        if flow.request.pretty_url == "http://harddump.proxy.local/":
+            send_ipc_message("hardump_requested", {"flows_count": len(self.flows)})
 
             try:
                 self.export_har(self.flows, self.save_path)
-                
-                # Send success response
-                # flow.response = http.Response.make(
-                #     200,  # Status code
-                #     b"HAR exported successfully",  
-                #     {"Content-Type": "text/plain"} 
-                # )
             except Exception as e:
-                print(f"IPC_Error during HAR export: {str(e)}", flush=True)
-                #logger.error(f"HAR export failed: {str(e)}", exc_info=True)
+                send_ipc_message("error", {
+                    "operation": "har_export",
+                    "error_message": str(e),
+                    "error_type": type(e).__name__
+                })
 
-
-        # TODO: test ob die http response funktioniert oder ipc antwort besser ist
-        """Send a reply from the proxy without sending the request to the remote server."""
-        # https://docs.mitmproxy.org/stable/addons-examples/#http-reply-from-proxy
+        """Handle HAR path setting request"""
         if flow.request.pretty_url == "http://hardumppath.proxy.local/":
             # Get the HAR path from the request header
             har_path = flow.request.headers.get('X-Har-Path', '')
@@ -114,35 +142,19 @@ class SaveHarCustom:
                 self.save_path = har_path
                 ctx.options.hardump = self.save_path
 
-                # Debug check and clear HAR flows
-                #print(f"IPC_Flows count before clear: {len(self.flows)}", flush=True)
-                #self.flows = []
-                #print(f"IPC_Flows count after clear: {len(self.flows)}", flush=True)
-
-                # Kill the connection to prevent further DNS lookup
-                # flow.kill()
-                print(f"IPC_HAR_PATH_SET: {har_path}", flush=True)
+                send_ipc_message("har_path_set", {"har_path": har_path})
         
-        # Clear HAR flows TODO doch in hardumppath eingebaut
+        # Clear HAR flows
         if flow.request.pretty_url == "http://clearflows.proxy.local/":
-            if PROXY_DEBUG: print("IPC_CLEAR_FLOWS_REQUESTED_HTTP", flush=True)
-            if PROXY_DEBUG: print(f"IPC_Flows count before clear: {len(self.flows)}", flush=True)
+            flows_before_clear = len(self.flows)
             self.flows = []
-            if PROXY_DEBUG: print(f"IPC_Flows count after clear: {len(self.flows)}", flush=True)
+            send_ipc_message("flows_cleared", {
+                "flows_before_clear": flows_before_clear,
+                "flows_after_clear": len(self.flows)
+            })
 
         if flow.request.pretty_url == "http://getharflows.proxy.local/":
-            if PROXY_DEBUG: print(f"IPC_GET_HAR_FLOWS_REQUESTED_HTTP: {len(self.flows)}", flush=True)
-            #flow.kill()
-            # No IPC console response if response is made
-            #flow.response = http.Response.make(
-            #    200,  # Status code
-            #    b"getharflows was successful",  
-            #    {"Content-Type": "text/plain"} 
-            #)
-            # Kill the connection to prevent further DNS lookup
-            #flow.kill()
-
-
+            send_ipc_message("har_flows_info", {"flows_count": len(self.flows)})
 
     def make_har(self, flows: Sequence[flow.Flow]) -> dict:
         entries = []
@@ -184,11 +196,11 @@ class SaveHarCustom:
             For mitmdump, enabling this option will mean that flows are kept in memory.
             """,
         )
-        print("PROXY_LOADED", flush=True)# meins
+        send_ipc_message("proxy_loaded")
 
-    def running(self): # meins
+    def running(self):
         """Called when the proxy is fully started"""
-        print("IPC_PROXY_READY", flush=True)  # Signal to Node.js that proxy is ready
+        send_ipc_message("proxy_ready")
 
     def configure(self, updated):
         if "save_stream_filter" in updated:
@@ -202,8 +214,12 @@ class SaveHarCustom:
 
         if "hardump" in updated:
             if not ctx.options.hardump:
-                self.flows = [] # meins
-                print("IPC_Hier wurden flows gelöscht", flush=True) # debug
+                flows_before_clear = len(self.flows)
+                self.flows = []
+                send_ipc_message("flows_cleared_config", {
+                    "flows_before_clear": flows_before_clear,
+                    "reason": "hardump_config_updated"
+                })
 
     def response(self, flow: http.HTTPFlow) -> None:
         # websocket flows will receive a websocket_end,
@@ -221,10 +237,22 @@ class SaveHarCustom:
         # Skip requests to *.proxy.local domains which are used for HTTP control
         if ".proxy.local" in flow.request.pretty_url:
             return
-        #if ctx.options.hardump:
+            
         flow_matches = self.filt is None or self.filt(flow)
         if flow_matches:
             self.flows.append(flow)
+            
+            # Check if this is the first request of the iteration
+            if self.iteration_active and self.request_count == 0:
+                self.request_count += 1
+                send_ipc_message("first_request_detected", {
+                    "method": flow.request.method,
+                    "url": flow.request.pretty_url,
+                    "host": flow.request.headers.get("Host", "unknown"),
+                    "timestamp": flow.request.timestamp_start
+                })
+            elif self.iteration_active:
+                self.request_count += 1
 
     # def done(self):
     #     if ctx.options.hardump:

@@ -13,6 +13,9 @@ const config = require("../config.js");
 const worker = config.activeConfig.worker;
 const baseConfig = config.activeConfig.base;
 
+// Debug option for proxy output - can be configured in config.js
+const PROXY_DEBUG_OUTPUT = baseConfig.proxy_debug_output || false;
+
 const fileformat = path.extname(worker.crawl_script);
 
 var childExists = false;
@@ -51,7 +54,23 @@ const colors = {
     }
 };
 
-
+/**
+ * Utility function to format file sizes in human readable format
+ * @param {number} bytes - Size in bytes
+ * @returns {string} - Formatted size string
+ */
+function prettySize(bytes) {
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let size = bytes;
+    let unitIndex = 0;
+    
+    while (size >= 1024 && unitIndex < units.length - 1) {
+        size /= 1024;
+        unitIndex++;
+    }
+    
+    return `${size.toFixed(1)} ${units[unitIndex]}`;
+}
 
 module.exports =
 {
@@ -291,8 +310,9 @@ module.exports =
                     const jsonData = jsonDataMatch[1].trim(); // Get the matched JSON data portion
                     try {
                         const parsedData = JSON.parse(jsonData); // Parse JSON only
-                        gatherCrawlEnvInfo(parsedData); // Pass the parsed data to gatherCrawlEnvInfo
-                        crawlEnvInfo.gatherEnvironmentInfo(parsedData); // Pass parsed data to the function
+                        // Todo add crawlEnvInfo functionality
+                        //gatherCrawlEnvInfo(parsedData); // Pass the parsed data to gatherCrawlEnvInfo 
+                        //crawlEnvInfo.gatherEnvironmentInfo(parsedData); // Pass parsed data to the function
                     } catch (error) {
                         console.error(colorize("ERROR: ", "red") + 'Failed to parse JSON data:', error);
                     }
@@ -336,20 +356,21 @@ module.exports =
             // todo brauch ich überhaupt noch? ungracefull shutdown
             if (worker.enable_proxy == true && isCancelled == false){ //if proxy is used proxy need to be closed to continue
 
-                try {
-                    console.log(colorize("STATUS:", "green") + " Killing proxy");
-                    exkill(proxy.pid);
+                console.log(colorize("DEBUG:", "green") + "Legacy  -Killing proxy- function triggered");
+                // try {
+                //     console.log(colorize("STATUS:", "green") + " Killing proxy");
+                //     exkill(proxy.pid);
 
-                    //proxy.kill("SIGINT");
-                    //process.kill(proxy.pid);
-                    //proxy.stdin.write("shutdownproxy\n")
-                } catch (error) {
-                    console.log(colorize("ERROR:", "red") + " ERROR while killing proxy: ", proxy.pid, error);
-                }    
+                //     //proxy.kill("SIGINT");
+                //     //process.kill(proxy.pid);
+                //     //proxy.stdin.write("shutdownproxy\n")
+                // } catch (error) {
+                //     console.log(colorize("ERROR:", "red") + " ERROR while killing proxy: ", proxy.pid, error);
+                // }    
           
             }else {
 
-                console.log(colorize("BROWSER:", "yellow") + " Browser geschlossen") // Debug
+                console.log(colorize("BROWSER:", "yellow") + " Browser closed") // Debug
                 console.log("isCanceled=",isCancelled)
                 if(!isCancelled){ // todo notizen, browserfinished hier schlecht. weil mit stateful wird nicht mehr geschlossen
                     // socket.emit("browserfinished"); 03 nicht mehr hier
@@ -690,54 +711,53 @@ module.exports =
             //let proxyOutput = ''; // todo hat einmal geklappt dass immer terminal out war, aber damit geht ipc schwerer
 
             proxy.stdout.on("data", (data) => {
-
-                // proxyOutput += data.toString();
-
                 const proxyOutput = data.toString();
-
-                // Check for proxy ready message
-                //if (proxyOutput.includes("HTTP(S) proxy listening at")) {
-                if (proxyOutput.includes("IPC_PROXY_READY")) {
-                    console.log(colorize("MITMPROXY:", "magenta") + " Proxy successfully started and ready");
-                    resolve();
-                }
-                if (proxyOutput.includes("Error logged during startup")) {
-                    console.log(colorize("MITMPROXY:", "magenta") + ": ");
-                    reject();
-                }
-                if (proxyOutput.includes("IPC_PROXY_SHUTDOWN")) {
-                    console.log(colorize("MITMPROXY:", "magenta") + " IPC channel proxy shutdown");
-                }
-                if (proxyOutput.includes("PROXY_SHUTDOWN_REQUESTED")) {
-                    console.log(colorize("MITMPROXY:", "magenta") + " Proxy shutdown requested");
-                }
-                if (proxyOutput.includes("PROXY_HARDUMP_REQUESTED_HTTP")) {
-                    console.log(colorize("MITMPROXY:", "magenta") + " Proxy hardump requested");
-                }
-
-                if (proxyOutput.startsWith("IPC_")) {
-                    if (proxyOutput.includes("IPC_PROXY_READY")) {
-                        console.log(colorize("MITMPROXY:", "magenta") + " IPC channel proxy ready");
-                        resolve();
+                
+                // Split output into lines to handle multiple messages
+                const lines = proxyOutput.trim().split('\n');
+                
+                for (const line of lines) {
+                    if (line.trim() === '') continue; // Skip empty lines
+                    
+                    // Check for new JSON IPC messages
+                    if (line.startsWith("IPC_JSON:")) {
+                        const jsonString = line.substring(9); // Remove "IPC_JSON:" prefix
+                        const message = processProxyIpcMessage(jsonString);
+                        
+                        // Handle specific message types that need special actions
+                        if (message && message.type === "proxy_ready") {
+                            resolve();
+                        }
                     }
-                    if (proxyOutput.includes("IPC_HAR_PATH_SET")) {
-                    } 
-                    else {
-                        console.log(colorize("MITMPROXY:", "magenta") + " " + proxyOutput);
+                    // Handle legacy IPC messages for backward compatibility
+                    else if (line.startsWith("IPC_")) {
+                        if (line.includes("IPC_PROXY_READY")) {
+                            console.log(colorize("MITMPROXY:", "magenta") + " IPC channel proxy ready (legacy)");
+                            resolve();
+                        } else if (line.includes("IPC_HAR_PATH_SET")) {
+                            // This is handled in setHarDumpPath function
+                        } else {
+                            if (PROXY_DEBUG_OUTPUT) {
+                                console.log(colorize("MITMPROXY:", "magenta") + " " + line);
+                            }
+                        }
+                    }
+                    // Handle other proxy messages
+                    else if (line.includes("Error logged during startup")) {
+                        console.log(colorize("MITMPROXY:", "magenta") + colorize(" Failed to start proxy", "red"));
+                        reject(new Error("Another mitmproxy instance probably already running"));
+                    }
+                    else if (line.includes("PROXY_SHUTDOWN_REQUESTED")) {
+                        console.log(colorize("MITMPROXY:", "magenta") + " Proxy shutdown requested (legacy)");
+                    }
+                    else if (line.includes("PROXY_HARDUMP_REQUESTED_HTTP")) {
+                        console.log(colorize("MITMPROXY:", "magenta") + " Proxy hardump requested (legacy)");
+                    }
+                    // Show all other proxy output only if debug is enabled
+                    else if (PROXY_DEBUG_OUTPUT) {
+                        console.log(colorize("MITMPROXY:", "magenta") + " " + line);
                     }
                 }
-  
-                // Wait for proxy to be ready
-                // if (data.toString().includes("HTTP(S) proxy listening at")) {
-                //     //Promise.resolve().then(console.log("MITMPROXY: Proxy ready"));
-                //     console.log("MITMPROXY: Proxy ready");
-                //     resolve();
-                // }
-
-                //console.log("Debug: sent save.har");
-                //proxy.stdin.write(":save.har"); // debug
-
-                //console.log("proxy stdout: " + proxyOutput); // DEBUG Show proxy HTTP requests
             })
 
         // Funktion zum dynamischen Ändern des Speicherorts oder zum Speichern der HAR-Datei
@@ -765,18 +785,41 @@ module.exports =
         var fileSaveDir = await createUrlDir(clearUrl);
         
         console.log(colorize("STATUS:", "green") + " Setting hardump path");
-        //console.log("STATUS: Setting hardump path to:", fileSaveDir);
 
         return new Promise((resolve, reject) => {
 
             const listener = (data) => {
                 const proxyOutput = data.toString();
-                if (proxyOutput.includes("IPC_HAR_PATH_SET")) {
-                    console.log(colorize("MITMPROXY:", "magenta") + " HAR path set");
-                    proxy.stdout.removeListener('data', listener); // Clean up listener
-                    resolve();
+                const lines = proxyOutput.trim().split('\n');
+                
+                for (const line of lines) {
+                    if (line.trim() === '') continue;
+                    
+                    // Check for new JSON IPC messages
+                    if (line.startsWith("IPC_JSON:")) {
+                        const jsonString = line.substring(9);
+                        try {
+                            const message = JSON.parse(jsonString);
+                            if (message.type === "har_path_set") {
+                                console.log(colorize("MITMPROXY:", "magenta") + " HAR path set");
+                                proxy.stdout.removeListener('data', listener);
+                                resolve();
+                                return;
+                            }
+                        } catch (error) {
+                            // Ignore JSON parse errors in listener
+                        }
+                    }
+                    // Handle legacy IPC messages
+                    else if (line.includes("IPC_HAR_PATH_SET")) {
+                        console.log(colorize("MITMPROXY:", "magenta") + " HAR path set (legacy)");
+                        proxy.stdout.removeListener('data', listener);
+                        resolve();
+                        return;
+                    }
                 }
             };
+            
             // Add temporary listener
             proxy.stdout.on('data', listener);
 
@@ -803,16 +846,6 @@ module.exports =
                 reject(new Error('Timeout waiting for HAR path set confirmation'));
             }, 15000);
 
-        // proxy.stdout.on("data", (data) => {
-        //     const proxyOutput = data.toString();
-
-        //     if (proxyOutput.startsWith("IPC_")) {
-        //         if (proxyOutput.includes("IPC_HAR_PATH_SET")) {
-        //             console.log("MITMPROXY: HAR path set");
-        //             resolve();
-        //         }
-        //     }
-        //     })
         });
         return harPath;
 
@@ -1011,20 +1044,21 @@ function waitForHarFile(harPath, timeout = 10000) {
     });
 }
 
-// Graceful proxy shutdown via HTTP request
+// Trying to shutdown proxy gracefully via HTTP request then forcing kill if it fails
 async function killProxy() {
     if (proxy && proxy.pid) {
         return new Promise((resolve, reject) => {
             try {
                 // Wait for the proxy to actually close
                 proxy.on("close", (data) => {
-                    console.log(colorize("MITMPROXY:", "magenta") + " Proxy process closed"); // Seems proxy is not answering after shutdown command
+                    console.log(colorize("STATUS:", "green") + " Proxy process closed"); // Seems proxy is not answering after shutdown command
                     resolve();
                 });
                 
-                console.log(colorize("MITMPROXY:", "magenta") + " Sending shutdown command to proxy..."); // Debug log
+                console.log(colorize("STATUS:", "green") + " Sending shutdown command to proxy..."); 
 
                 // Send HTTP request to trigger graceful shutdown
+                // Todo graceful shutdown not working atm, exkill is used later instead
                 axios.get('http://shutdown.proxy.local/', {
                     proxy: {
                         host: worker.proxy_host,
@@ -1032,13 +1066,9 @@ async function killProxy() {
                         protocol: 'http'
                     }
                 }).catch(err => {
-                    //  Expecting this to fail as the proxy shuts down
+                    // Expecting this to fail as the proxy shuts down
                     console.log(colorize("ERROR:", "red") + " Failed to send graceful shutdown request:",);  // err);
-                    //console.log("Failed to send graceful shutdown request:", err); // Debug
-                    //console.log(proxy);
-
                 });
-
 
                 // Set a timeout in case the clean shutdown fails
                 setTimeout(() => {
@@ -1052,17 +1082,7 @@ async function killProxy() {
             }
         });
     }
-    // old method not graceful
-    //     try { 
-    //         exkill(proxy.pid);
-    //         console.log("Killing Proxy process");
-    //     } catch (error) {
-    //         console.error("Error while killing proxy process:", error);
-    //     }
-    //     return Promise.resolve();
-    // }
 }
-
 
 // Create directory for each crawled URL
 async function createUrlDir(clearUrl) {
@@ -1153,3 +1173,99 @@ function colorize(text, color) {
 //     });
 //     })
 // }
+
+/**
+ * Process JSON IPC messages from the proxy
+ * @param {string} jsonString - The JSON string to parse
+ */
+function processProxyIpcMessage(jsonString) {
+    try {
+        const message = JSON.parse(jsonString);
+        const { type, data, timestamp, debug } = message;
+
+        // Log the message type with timestamp - REMOVED to avoid duplicate output
+        // console.log(colorize("MITMPROXY:", "magenta") + ` [${type}]` + (debug ? ` ${debug}` : ""));
+
+        switch (type) {
+            case "proxy_ready":
+                console.log(colorize("MITMPROXY:", "magenta") + " Proxy successfully started and ready");
+                break;
+
+            case "proxy_loaded":
+                console.log(colorize("MITMPROXY:", "magenta") + " Proxy addon loaded");
+                break;
+
+            case "har_export_started":
+                console.log(colorize("MITMPROXY:", "magenta") + ` Starting HAR export with ${data.flows_count} flows`);
+                break;
+
+            case "har_export_completed":
+                console.log(colorize("MITMPROXY:", "magenta") + ` HAR export completed: ${data.file_path} (${prettySize(data.file_size)})`);
+                if (PROXY_DEBUG_OUTPUT) {
+                    console.log(colorize("MITMPROXY:", "magenta") + ` Flows before/after clear: ${data.flows_before_clear}/${data.flows_after_clear}`);
+                }
+                break;
+
+            case "hardump_requested":
+                console.log(colorize("MITMPROXY:", "magenta") + ` HAR dump requested (${data.flows_count} flows)`);
+                break;
+
+            case "har_path_set":
+                if (PROXY_DEBUG_OUTPUT) {
+                    console.log(colorize("MITMPROXY:", "magenta") + ` HAR path set: ${data.har_path}`);
+                }
+                break;
+
+            case "first_request_detected":
+                console.log(colorize("MITMPROXY:", "magenta") + ` First request detected: ${data.method} ${data.url}`);
+                break;
+
+            case "flows_cleared":
+                if (PROXY_DEBUG_OUTPUT) {
+                    console.log(colorize("MITMPROXY:", "magenta") + ` Flows cleared: ${data.flows_before_clear} -> ${data.flows_after_clear}`);
+                }
+                break;
+
+            case "flows_cleared_config":
+                if (PROXY_DEBUG_OUTPUT) {
+                    console.log(colorize("MITMPROXY:", "magenta") + ` Flows cleared (${data.reason}): ${data.flows_before_clear} flows`);
+                }
+                break;
+
+            case "har_flows_info":
+                if (PROXY_DEBUG_OUTPUT) {
+                    console.log(colorize("MITMPROXY:", "magenta") + ` Current HAR flows count: ${data.flows_count}`);
+                }
+                break;
+
+            case "error":
+                console.log(colorize("MITMPROXY:", "magenta") + colorize(` Error in ${data.operation}: ${data.error_message}`, "red"));
+                break;
+
+            case "debug":
+                if (PROXY_DEBUG_OUTPUT) {
+                    console.log(colorize("MITMPROXY:", "magenta") + colorize(` DEBUG: ${data.message}`, "gray"));
+                }
+                break;
+
+            case "proxy_shutdown_requested":
+                console.log(colorize("MITMPROXY:", "magenta") + " Proxy shutdown requested");
+                if (PROXY_DEBUG_OUTPUT && data.flows_count > 0) {
+                    console.log(colorize("MITMPROXY:", "magenta") + ` Clearing ${data.flows_count} flows before shutdown`);
+                }
+                break;
+
+            default:
+                console.log(colorize("MITMPROXY:", "magenta") + ` Unknown message type: ${type}`);
+                if (PROXY_DEBUG_OUTPUT) {
+                    console.log(colorize("MITMPROXY:", "magenta") + ` Data: ${JSON.stringify(data)}`);
+                }
+        }
+
+        return message;
+    } catch (error) {
+        console.error(colorize("ERROR:", "red") + " Failed to parse proxy IPC message:", error);
+        console.error(colorize("ERROR:", "red") + " Raw message:", jsonString);
+        return null;
+    }
+}

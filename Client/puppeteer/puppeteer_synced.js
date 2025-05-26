@@ -7,12 +7,13 @@
  * 
  ****************************************************************************/
 
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-core');
 const minimist = require('minimist');
 const readline = require('readline');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const config = require('../config.js'); // Import config
 
 const args = minimist(process.argv.slice(2));
 // console.log("Parsed Arguments: ", args); // DEBUG
@@ -23,29 +24,36 @@ const headless = args.headless || false;
 const datapath = args.datapath || null;
 const reset = args.reset || false;
 
+const workerConfig = config.activeConfig.worker;
+
 
 let browser, page;
 let userDataDir = datapath ? path.resolve(datapath) : null;
 
 async function launchBrowser() {
-    let proxyArg = '';
-
-    if (proxyhost && proxyport) {
-        proxyArg = `--proxy-server=${proxyhost}:${proxyport}`;
-        console.log(`Proxy set to ${proxyhost}:${proxyport}`);
-    }
-
-    browser = await puppeteer.launch({
+    const launchOptions = {
         headless: headless,
         ignoreHTTPSErrors: true,
-        userDataDir: userDataDir, 
-        browser: 'firefox', // WebDriver BiDi is used by default.
-        // Manual installation: npx @puppeteer/browsers install firefox@stable_138.0.1
-        executablePath: '/home/' + os.userInfo().username + '/Downloads/bsync/Client/firefox/stable_138.0.1/firefox/firefox',
-        args:
-            //[proxyArg, "--start-maximized", "--window-size=1920,1080", "--disable-gpu", "--no-sandbox"].filter(Boolean),
-            [proxyArg, "---start-fullscreen"].filter(Boolean),
-    });
+        userDataDir: userDataDir,
+        browser: 'firefox', 
+        executablePath: workerConfig.browser_path,
+        args: ["---start-fullscreen"].filter(Boolean),
+        extraPrefsFirefox: {} // Initialisiere extraPrefsFirefox
+    };
+
+    if (proxyhost && proxyport) {
+        console.log(`Set Firefox Proxy to ${proxyhost}:${proxyport}.`);
+        launchOptions.extraPrefsFirefox = {
+            'network.proxy.type': 1, 
+            'network.proxy.http': proxyhost,
+            'network.proxy.http_port': parseInt(proxyport),
+            'network.proxy.ssl': proxyhost,
+            'network.proxy.ssl_port': parseInt(proxyport),
+            'network.proxy.share_proxy_settings': true 
+        };
+    }
+
+    browser = await puppeteer.launch(launchOptions);
 
     // Use the already opened tab
     page = (await browser.pages())[0]; 
@@ -60,7 +68,6 @@ async function launchBrowser() {
     
     // console.log("Browser launched");
     process.stdout.write("browser_ready");
-
 }
 
 async function visitUrl(url, waitingtime = 0, stayTime = 3, restart = false) {

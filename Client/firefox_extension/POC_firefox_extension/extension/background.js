@@ -8,8 +8,11 @@ let tabId = null;
 let stayTimeMs = 3000; // Default stay time in milliseconds
 let waitingTime = 0; // Default waiting time before loading URL
 
-// Eine Variable zur Verfolgung, ob bereits ein Timer für die aktuelle Seite gesetzt wurde
 let timerActive = false;
+
+// Timeout for visiting a URL (20 seconds)
+const NAVIGATION_TIMEOUT = 20000; // ms
+let navigationTimeoutId = null;
 
 // Connect to the websocket server
 function connectToServer() {
@@ -82,6 +85,23 @@ function visitUrl(url, stayTime = 3) {
   currentUrl = url;
   stayTimeMs = stayTime * 1000;
   
+  // Reset timer state
+  timerActive = false;
+  
+  // Clear any existing navigation timeout
+  if (navigationTimeoutId) {
+    clearTimeout(navigationTimeoutId);
+    navigationTimeoutId = null;
+  }
+  
+  // Set navigation timeout - if page doesn't load within timeout, treat as error
+  navigationTimeoutId = setTimeout(() => {
+    if (!timerActive) {
+      console.error(`Navigation timeout for URL: ${url}`);
+      handleNavigationError(url, 'Navigation timeout');
+    }
+  }, NAVIGATION_TIMEOUT);
+  
   // Find existing tabs
   browser.tabs.query({})
     .then(tabs => {
@@ -97,15 +117,75 @@ function visitUrl(url, stayTime = 3) {
         });
       }
     })
-    
     .catch(error => {
       console.error('Error loading URL:', error);
-      // Report error back to server
-      sendToServer({
-        type: 'error',
-        message: `Failed to load URL: ${error.message}`
-      });
+      handleNavigationError(url, error.message);
     });
+}
+
+// Handle navigation errors (timeout, network errors, etc.)
+function handleNavigationError(url, errorMessage) {
+  console.error(`Navigation error for ${url}: ${errorMessage}`);
+  
+  // Clear navigation timeout
+  if (navigationTimeoutId) {
+    clearTimeout(navigationTimeoutId);
+    navigationTimeoutId = null;
+  }
+  
+  // Mark timer as active to prevent duplicate handling
+  timerActive = true;
+  
+  // Report error back to server
+  sendToServer({
+    type: 'navigation_error',
+    url: url,
+    error: errorMessage
+  });
+  
+  // Wait for stayTime even with errors, then proceed
+  console.log(`Navigation error occurred, but waiting ${stayTimeMs}ms (stayTime) before proceeding`);
+  setTimeout(() => {
+    console.log(`Stay time completed (${stayTimeMs}ms) after navigation error, navigating to about:blank`);
+    timerActive = false;
+    
+    // Send URL_DONE with error flag after stayTime
+    sendToServer({
+      type: 'URL_DONE',
+      url: url,
+      error: true,
+      errorMessage: errorMessage
+    });
+
+    // Then navigate to about:blank
+    browser.tabs.update(tabId, { url: 'about:blank' })
+      .then(() => {
+        // Monitor for about:blank completion and send BROWSER_FINISHED only when it's loaded
+        const aboutBlankHandler = (navDetails) => {
+          if (navDetails.frameId === 0 && 
+              navDetails.tabId === tabId && 
+              navDetails.url === 'about:blank') {
+            // Remove this event listener
+            browser.webNavigation.onCompleted.removeListener(aboutBlankHandler);
+            
+            // Send BROWSER_FINISHED after about:blank has loaded
+            sendToServer({
+              type: 'BROWSER_FINISHED'
+            });
+          }
+        };
+        
+        // Add special event listener for about:blank loading
+        browser.webNavigation.onCompleted.addListener(aboutBlankHandler);
+      })
+      .catch(error => {
+        console.error('Error navigating to about:blank after error:', error);
+        // Send BROWSER_FINISHED even if there was an error
+        sendToServer({
+          type: 'BROWSER_FINISHED'
+        });
+      });
+  }, stayTimeMs);
 }
 
 // Reset browser state
@@ -145,6 +225,12 @@ browser.webNavigation.onCompleted.addListener(details => {
   // Exclude about:blank URLs from triggering the main handler
   if (details.frameId === 0 && details.tabId === tabId && !timerActive && details.url !== 'about:blank') {
     console.log(`Page loaded: ${details.url}`);
+    
+    // Clear navigation timeout since page loaded successfully
+    if (navigationTimeoutId) {
+      clearTimeout(navigationTimeoutId);
+      navigationTimeoutId = null;
+    }
     
     // Markiere, dass ein Timer aktiv ist
     timerActive = true;
@@ -189,6 +275,22 @@ browser.webNavigation.onCompleted.addListener(details => {
           });
         });
     }, stayTimeMs);
+  }
+});
+
+// Handle navigation errors (DNS errors, connection refused, etc.)
+browser.webNavigation.onErrorOccurred.addListener(details => {
+  if (details.frameId === 0 && details.tabId === tabId && !timerActive) {
+    console.error(`Navigation error occurred: ${details.error} for URL: ${details.url}`);
+    handleNavigationError(details.url, details.error);
+  }
+});
+
+// Handle tab crashes or other critical errors
+browser.tabs.onUpdated.addListener((updateTabId, changeInfo, tab) => {
+  if (updateTabId === tabId && changeInfo.status === 'complete' && tab.url && tab.url.startsWith('about:neterror')) {
+    console.error(`Network error page detected for tab ${updateTabId}`);
+    handleNavigationError(currentUrl, 'Network error page detected');
   }
 });
 

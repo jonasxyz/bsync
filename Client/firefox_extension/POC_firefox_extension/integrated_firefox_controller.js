@@ -76,8 +76,17 @@ wss.on('connection', (ws) => {
           process.stdout.write("browser_ready\n");
           break;
         case 'URL_DONE':
-          console.log(`Page ${data.url} loaded successfully!`);
-          process.stdout.write("URL_DONE\n");
+          if (data.error) {
+            console.error(`Page ${data.url} failed to load: ${data.errorMessage}`);
+            process.stdout.write("URL_ERROR\n");
+          } else {
+            console.log(`Page ${data.url} loaded successfully!`);
+            process.stdout.write("URL_DONE\n");
+          }
+          break;
+        case 'navigation_error':
+          console.error(`Navigation error for ${data.url}: ${data.error}`);
+          // Continue processing, don't break the flow
           break;
         case 'BROWSER_FINISHED':
           //console.log('Iteration completed');
@@ -88,7 +97,7 @@ wss.on('connection', (ws) => {
           process.stdout.write("BROWSER_FINISHED\n");
           break;
         default:
-          //console.log(`Unknown message type: ${data.type}`);
+          if (DEBUG) console.log(`Unknown message type: ${data.type}`);
       }
     } catch (error) {
       console.error('Error processing message:', error);
@@ -146,8 +155,10 @@ async function launchBrowser() {
     
     // Start Firefox process
     firefoxProcess = spawn(FIREFOX_PATH, firefoxArgs, {
-      stdio: 'ignore',
-      detached: true
+      stdio: 'pipe',
+      detached: false
+      // stdio: 'ignore',
+      // detached: true
     });
     
     firefoxProcess.on('error', (error) => {
@@ -156,7 +167,7 @@ async function launchBrowser() {
     });
     
     // Don't wait for Firefox process
-    firefoxProcess.unref();
+    //firefoxProcess.unref(); // Todo check if this is needed
     
     console.log('Firefox started successfully');
     
@@ -169,7 +180,7 @@ async function launchBrowser() {
 /**
  * Reset browser by restarting Firefox
  */
-async function resetBrowser() {
+async function shutdownBrowser( restart = false) {
   console.log("Resetting browser...");
   
   // Terminate current Firefox process
@@ -200,45 +211,11 @@ async function resetBrowser() {
   profileManager.cleanupTempProfile();
   
   // Restart Firefox with new profile
-  await launchBrowser();
+  if (restart) {
+    await launchBrowser();
+  }
   return true;
 }
-
-/**
- * URL-Besuch-Befehl verarbeiten. wo wartet er aktuell auf die stayTime?
- */ 
-// async function visitUrl(url, useragent, waitingtime = 0, stayTime = 3, restart = false) {
-//   console.log(`Sende Befehl zum Besuch der URL: ${url} (Verweildauer: ${stayTime}s)`);
-  
-//   // Befehl an die Erweiterung senden
-//   sendCommandToExtension({
-//     type: 'loadUrl',
-//     url: url,
-//     stayTime: parseInt(stayTime) || 3,
-//     waitingTime: waitingtime || 0
-//   });
-  
-//   // Auf Signale von der Erweiterung warten
-//   return new Promise((resolve) => {
-//     let timeout = setTimeout(() => {
-//       console.log("Zeitüberschreitung beim Warten auf Antwort von der Erweiterung");
-//       process.stdout.write("BROWSER_FINISHED\n");
-//       resolve();
-//     }, 60000); // 60 Sekunden Timeout
-    
-//     const dataHandler = (data) => {
-//       const output = data.toString().trim();
-      
-//       if (output === "BROWSER_FINISHED") {
-//         clearTimeout(timeout);
-//         process.stdout.removeListener('data', dataHandler);
-//         resolve();
-//       }
-//     };
-    
-//     process.stdout.on('data', dataHandler);
-//   });
-// }
 
 // Todo probably wont be used anymore
 // Parse command line arguments for proxy settings
@@ -329,6 +306,8 @@ process.stdin.on('readable', () => {
         }
       } else if (command === 'reset') {
         sendCommandToExtension({ type: 'reset' });
+      } else if (command === 'shutdown') {
+        shutdownBrowser(false);
       } else  {
         console.log(`Unknown command from worker.js: ${command}`);
       }

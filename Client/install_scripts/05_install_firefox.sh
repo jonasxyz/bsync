@@ -80,5 +80,46 @@ if ! "$SYMLINK_PATH" --version; then
     exit 1
 fi
 
+# Firefox configuration for proxy use with system certificates
+# Configures Firefox to use system certificates (incl. mitmproxy CA).
+# If Firefox's libnssckbi.so exists as a regular file, it's backed up and replaced with a symlink to the system's p11-kit-trust.so.
+# If libnssckbi.so is already a symlink, it's updated.
+# If libnssckbi.so does not exist, p11-kit-trust.so is copied and renamed to libnssckbi.so.
+FIREFOX_BIN_DIR="$INSTALL_DIR" # In this script, INSTALL_DIR points to the Firefox installation
+LIBNSSCKBI_SO_PATH="$FIREFOX_BIN_DIR/libnssckbi.so"
+P11_KIT_TRUST_SO_PATH="/usr/lib/x86_64-linux-gnu/pkcs11/p11-kit-trust.so" # Standard system path
+
+# First, ensure the system's p11-kit-trust.so is available
+if [ ! -f "$P11_KIT_TRUST_SO_PATH" ]; then
+    echo "WARNING: System trust store $P11_KIT_TRUST_SO_PATH not found."
+    echo "Firefox certificate configuration will be skipped."
+    echo "Note: p11-kit (and thus p11-kit-trust.so) is usually part of the p11-kit-modules package."
+    echo "You might need to install it, e.g., 'sudo apt install p11-kit p11-kit-modules'."
+else
+    echo "Configuring Firefox to use system certificates (for proxy use, etc.)..."
+    if [ -f "$LIBNSSCKBI_SO_PATH" ] && [ ! -L "$LIBNSSCKBI_SO_PATH" ]; then # It's a regular file
+        echo "Found existing Firefox trust store at $LIBNSSCKBI_SO_PATH."
+        echo "Backing it up to $LIBNSSCKBI_SO_PATH.bak."
+        sudo mv "$LIBNSSCKBI_SO_PATH" "$LIBNSSCKBI_SO_PATH.bak"
+        echo "Creating symbolic link from $P11_KIT_TRUST_SO_PATH to $LIBNSSCKBI_SO_PATH."
+        sudo ln -sf "$P11_KIT_TRUST_SO_PATH" "$LIBNSSCKBI_SO_PATH"
+        echo "Firefox configured: $LIBNSSCKBI_SO_PATH is now a symlink to system certificates."
+    elif [ -L "$LIBNSSCKBI_SO_PATH" ]; then # It's already a symlink
+        echo "$LIBNSSCKBI_SO_PATH is already a symlink."
+        echo "Ensuring it points correctly to $P11_KIT_TRUST_SO_PATH."
+        sudo ln -sf "$P11_KIT_TRUST_SO_PATH" "$LIBNSSCKBI_SO_PATH" # -f ensures it overwrites if necessary
+        echo "Firefox configured: $LIBNSSCKBI_SO_PATH symlink updated/verified."
+    else # libnssckbi.so does not exist (or is not a regular file and not a symlink)
+        echo "Firefox trust store $LIBNSSCKBI_SO_PATH not found."
+        echo "Copying system trust store $P11_KIT_TRUST_SO_PATH to $LIBNSSCKBI_SO_PATH."
+        sudo cp "$P11_KIT_TRUST_SO_PATH" "$LIBNSSCKBI_SO_PATH"
+        echo "Firefox configured: System certificates copied as $LIBNSSCKBI_SO_PATH."
+    fi
+fi
+
+# Install autoload for setting up automatic extension loading for bsyncs Firefox extension
+sudo cp -r "/home/user/Downloads/bsync/Client/firefox_extension/POC_firefox_extension/autoload_temporary_addon/userChrome.js" "$INSTALL_DIR/userChrome.js"
+sudo cp -r "/home/user/Downloads/bsync/Client/firefox_extension/POC_firefox_extension/autoload_temporary_addon/config-prefs.js" "$INSTALL_DIR/defaults/pref/config-prefs.js"
+
 echo "Module 05: Firefox ${FIREFOX_VERSION} installation complete."
-echo "You can run this version using the command: $SYMLINK_PATH" 
+echo "You can run this version using the command: $SYMLINK_PATH"

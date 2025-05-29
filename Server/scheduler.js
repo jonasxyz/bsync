@@ -14,6 +14,7 @@ const {server} = require('./functions/server.js');
 
 
 const { logMessage } = require('./functions/helper.js');
+const { setupConsoleAndFileLogging } = require('./functions/helper.js');
 const fs = require('fs');
 
 
@@ -72,7 +73,7 @@ var isAnswered = false;
 
 var fresh_initialization = true; // todo noch checken wie es ist wenn framework neu gestartet werden muss. und wieder initcrawl kommt
 
-var tempUrl;
+var currentJobData = { clearUrl: null, urlIndex: -1 }; // Removed totalUrls
 var numIterations;
 var calibrationTime;
 var pingTime;
@@ -95,18 +96,32 @@ var crawlTimestamp;
 console.log('\nMaster server is starting...');
 
 // Create directory for crawl logs and storage for HAR-Data
-createCrawlDirectory();
+// createCrawlDirectory(); // Will be called and awaited, then logging setup
 
-if (config.test_run){
-    numIterations = config.test_iterations;
-    console.log("Starting test run with " + numIterations +" Iterations");
-    logFunctions.startLogTesting(new Date().toISOString().split('T')[0], rootDirPath);
+(async () => {
+    try {
+        await createCrawlDirectory(); // Ensure directory is created before setting up logging
+        if (rootDirPath) {
+            setupConsoleAndFileLogging(rootDirPath, 'scheduler.log');
+            console.log("Scheduler logging to file enabled."); // This will also go to the file
+        } else {
+            console.error("Failed to setup file logging for scheduler: rootDirPath not available.");
+        }
+    } catch (error) {
+        console.error("Error during initial directory creation or log setup:", error);
+        // process.exit(1); // Optionally exit if logging setup is critical
+    }
 
-}else{
-    numIterations = urlList.length;
-    console.log("Fetched "+ numIterations+" entries from "+ config.url_list);
-    logFunctions.startLog(config.url_list.toString(), new Date().toISOString().split('T')[0], rootDirPath);
-}
+    if (config.test_run){
+        numIterations = config.test_iterations;
+        console.log("Starting test run with " + numIterations +" Iterations");
+        logFunctions.startLogTesting(new Date().toISOString().split('T')[0], rootDirPath);
+    } else {
+        numIterations = urlList.length;
+        console.log("Fetched "+ numIterations+" entries from "+ config.url_list);
+        logFunctions.startLog(config.url_list.toString(), new Date().toISOString().split('T')[0], rootDirPath);
+    }
+})();
 
 // Events erklärt  https://socket.io/docs/v4/emitting-events/
 
@@ -123,9 +138,9 @@ io.on("connection", socket => {
     // Send number of connected workers to each client //Todo unnötig entfernen
     io.to(socket.id).emit("numclients", config.num_clients); 
     
-    // Send crawl timestamp to each client for har remote storage
-    io.to(socket.id).emit("crawlRootDir", crawlTimestamp); 
-    console.log("INFO: " + "Sent crawl timestamp to client: " + crawlTimestamp); // DEBUG
+    // Send crawl timestamp and totalUrls to each client
+    io.to(socket.id).emit("crawlRootDir", { crawlTimestamp: crawlTimestamp, totalUrls: urlList.length }); 
+    console.log("INFO: " + "Sent crawlRootDir (timestamp & totalUrls) to client: " + crawlTimestamp + ", " + urlList.length); 
 
 
     socket.on("initialization", (clientname)=>{
@@ -139,8 +154,10 @@ io.on("connection", socket => {
 
         if(config.central_datastorage) { 
             let preTempUrl = urlList[urlsDone].toString();
-            tempUrl = preTempUrl.slice(preTempUrl.indexOf(",") + 1);
-            serverFunctions.createClientUploadRoute(socket.id, rootDirPath, tempUrl);
+            currentJobData.clearUrl = preTempUrl.slice(preTempUrl.indexOf(",") + 1);
+            currentJobData.urlIndex = urlsDone + 1; // 1-based index for worker
+
+            serverFunctions.createClientUploadRoute(socket.id, rootDirPath, currentJobData.clearUrl);
         }
 
         // Storing connected clients and data for each URL-Iteration while crawling 
@@ -197,10 +214,10 @@ io.on("connection", socket => {
 
             // Send readycheck to reconnected client
             io.to(socket.id).emit("initiate_crawler");
-            io.to(socket.id).emit("start_capturer", tempUrl);
+            io.to(socket.id).emit("start_capturer", currentJobData);
 
             // Send check ready to all clients todo somehow check if automation framework is started
-            io.sockets.emit("CHECK_READY", tempUrl); 
+            io.sockets.emit("CHECK_READY", { clearUrl: currentJobData.clearUrl, urlIndex: urlsDone + 1 });
         }
     })
 
@@ -276,12 +293,15 @@ io.on("connection", socket => {
 
                 //const errorDetailsLine = errorString.split('\n')[errorString.split('\n').indexOf(errorLine) + 1].trim();
                 //console.log("2errorDetail=",errorDetailsLine); //debug errormsg
+                if (errorLine) {
+                    tempArray[arrayPosition].errorArray.push(errorLine);
+                }
 
             } catch (error) {
                 // errorLine = "unknown error"; // todo add error detail handling
             }
             
-            tempArray[arrayPosition].errorArray.push(errorLine); // log first line of errormessage //vmedit todo check for other error and openwpm
+            // tempArray[arrayPosition].errorArray.push(errorLine); // log first line of errormessage //vmedit todo check for other error and openwpm
         }
     })
 
@@ -296,6 +316,7 @@ io.on("connection", socket => {
         tempArray[arrayPosition].doneArray.push((dateUrlDone - timeUrlSent));
         //console.log ("pushed " + (dateUrlDone - timeUrlSent)); // debug
 
+        console.log("\x1b[33mSTATUS: \x1b[0m" + "URL_DONE received from " + tempArray[arrayPosition].workerName);
     })
 
     // Triggered everytime one browser finished while crawling
@@ -368,7 +389,7 @@ io.on("connection", socket => {
                 // console.log ((dateUrlDone - timeUrlSent) , " minus " + arrayClients[calibrationArrayPosition].offsetDone , " gleich " , estimatedRequest ); //debug
                 tempArray[arrayPosition].requestArray.push(estimatedRequest);
 
-                console.log("\x1b[34mCRAWLED:\x1b[0m", arrayClients[calibrationArrayPosition].workerName , "crawled URL", tempUrl , "finished\x1b[34m",
+                console.log("\x1b[34mCRAWLED:\x1b[0m", arrayClients[calibrationArrayPosition].workerName , "crawled URL", currentJobData.clearUrl , "finished\x1b[34m",
                 tempDateUrlDone , "ms\x1b[0m after distributing URL");
                 //console.log("\x1b[34mCRAWLED:\x1b[0m", arrayClients[calibrationArrayPosition].workerName , "crawled URL", tempUrl , "finished\x1b[34m",
                     //tempDateUrlDone , "ms\x1b[0m after distributing URL. Estimated Request\x1b[34m ",estimatedRequest , "ms\x1b[0m after distribution");
@@ -441,7 +462,7 @@ io.on("connection", socket => {
             if(config.test_run) statFunctions.calcHttpDelayV2(arrayStatistics, urlsDone);
 
             // logFunctions.logTesting(arrayStatistics, urlsDone);
-            logFunctions.logCrawling(arrayStatistics,urlsDone, tempUrl.toString());
+            logFunctions.logCrawling(arrayStatistics,urlsDone, currentJobData.clearUrl.toString());
             
             console.log("\x1b[33mSTATUS: \x1b[0m" + "URL " + urlsDone , " of " , numIterations + " done");
             //console.table(arrayStatistics);
@@ -471,11 +492,11 @@ io.on("connection", socket => {
             //sendUrl(); // 19.11 
             //socket.emit("CHECK_READY");
 
-            // Get the next URL
-            tempUrl = retrieveUrl();
+            // Get the next URL and its index
+            currentJobData = retrieveUrl();
 
-            io.sockets.emit("CHECK_READY", tempUrl);
-            helperFunctions.logMessage("status", "CHECK_READY sent to all workers");
+            io.sockets.emit("CHECK_READY", { clearUrl: currentJobData.clearUrl, urlIndex: urlsDone + 1 });
+            helperFunctions.logMessage("status", "CHECK_READY sent to all workers for URL: " + currentJobData.clearUrl + " (Index: " + (urlsDone + 1) + ")");
 
             console.log("\n--------------------------------------------------------------------------------------------------------------\n")
         }
@@ -554,43 +575,48 @@ io.on("connection", socket => {
         logMessage("status", "Starting crawlers");
         ongoingCrawl=true;
 
-        // Retrieve the first URL
-        if (!tempUrl) {
-            tempUrl = retrieveUrl();
+        // Retrieve the first URL and its index
+        if (!currentJobData.clearUrl || currentJobData.urlIndex === -1) {
+            currentJobData = retrieveUrl();
         }
 
         //console.log("calibration", calibrationDone, "initcal", initCalibrationDone); // DEBUG
 
         // Start capturer if requested
-        console.log("start_capturer", tempUrl);
-        if (start_capturer) io.sockets.emit("start_capturer", tempUrl);
+        console.log("start_capturer for job (url/index only):", { clearUrl: currentJobData.clearUrl, urlIndex: currentJobData.urlIndex });
+        if (start_capturer) io.sockets.emit("start_capturer", { clearUrl: currentJobData.clearUrl, urlIndex: currentJobData.urlIndex });
     }
     context.initiate_crawler = initiate_crawler;
 
     function retrieveUrl(){
-        //if(calibration == true){    // while calibrating schedulers ip adress is distributed to the clients
-        if(calibrationDone == false){ // 03 changed
-           //tempUrl = ip+":"+port;
+        let urlToCrawl;
+        let indexForUrl; // This will be the 1-based index for the worker
+
+        if(calibrationDone == false){ 
+           urlToCrawl = "calibration";
+           indexForUrl = testsDone + 1; 
            if(initCalibrationDone==false && testsDone==0) calibrationTime = Date.now();
-           tempUrl = "calibration";
            pendingRequests += config.num_clients;
            
         }else{
-
+            indexForUrl = urlsDone + 1; 
             if(config.test_run){
-                tempUrl =  "test";
-                pendingRequests += config.num_clients; // changed
+                urlToCrawl =  "test";
+                pendingRequests += config.num_clients; 
             } 
             else {
-                preTempUrl = urlList[urlsDone].toString();
-                tempUrl = preTempUrl.slice(preTempUrl.indexOf(",") + 1);
-                logFunctions.newUrl(tempUrl, urlsDone+1, new Date().toISOString());
-
+                if (urlsDone < urlList.length) {
+                    let preTempUrl = urlList[urlsDone].toString();
+                    urlToCrawl = preTempUrl.slice(preTempUrl.indexOf(",") + 1);
+                    logFunctions.newUrl(urlToCrawl, indexForUrl, new Date().toISOString());
+                } else {
+                    console.error("Error: retrieveUrl called but urlsDone has exceeded urlList length.");
+                    urlToCrawl = null; 
+                    indexForUrl = -1;
+                }
             }
-
-
         }
-        return tempUrl;
+        return { clearUrl: urlToCrawl, urlIndex: indexForUrl };
     }
     context.retrieveUrl = retrieveUrl;
 
@@ -619,7 +645,7 @@ io.on("connection", socket => {
         //     retrieveUrl();
         // }
 
-        if(urlsDone == numIterations){
+        if(urlsDone == numIterations && !config.test_run && calibrationDone){ // Check added for test_run and calibrationDone
             console.log("\x1b[33mSTATUS: \x1b[0m" + "All Websites crawled.\nShutting down server...", "\x1b[0m");
             io.sockets.emit("close", "finished");
             process.exit();
@@ -627,16 +653,15 @@ io.on("connection", socket => {
 
         
         // io.sockets.emit("url", tempUrl);  //03 muss zu visit_url werden
-        io.sockets.emit("visit_url", tempUrl);
+        // io.sockets.emit("visit_url", tempUrl); // Old
+        io.sockets.emit("visit_url", { clearUrl: currentJobData.clearUrl, urlIndex: urlsDone + 1 });
 
         timeUrlSent = Date.now();
         pendingJobs += config.num_clients;
 
 
-        if(calibrationDone == true) console.log("\x1b[33mSTATUS: \x1b[0m" + "URL#"+ (urlsDone+1) + " sent " + tempUrl);
-
-        // if(calibrationDone) console.log("\x1b[33mSTATUS: \x1b[0m" + "URL#"+ (urlsDone+1) + " sent " + tempUrl); // vmedit 16:09 23-07-24
-        else console.log("\x1b[33mSTATUS: \x1b[0m" + "calibration#" + (testsDone+1) + " sent to all workers"); 
+        if(calibrationDone == true) console.log("\x1b[33mSTATUS: \x1b[0m" + "URL#"+ (urlsDone + 1) + " (Index: " + (urlsDone + 1) + ") sent: " + currentJobData.clearUrl);
+        else console.log("\x1b[33mSTATUS: \x1b[0m" + "calibration#" + (testsDone+1) + " (Index: " + (testsDone + 1) + ") sent to all workers for URL: " + currentJobData.clearUrl); 
 
         // Countdown is started and gets resolved when all browser are ready // todo dynamic timeout - 3x from calibration
         browserReadyCountdown = setTimeout(browserReadyTimeout, 120000 ) 
@@ -657,7 +682,7 @@ io.on("connection", socket => {
                 initiate_crawler();
                 calibrationDone = true;
                 initCalibrationDone = true;
-                console.log("No Calibration");
+                console.log("No Calibration (skipped confirmation)");
             }
             isAnswered = true;
             return;
@@ -676,7 +701,7 @@ io.on("connection", socket => {
                     initiate_crawler(); // 03
                     calibrationDone = true; // vmedit skipcalibration
                     initCalibrationDone = true;
-                    console.log("No Calibration");
+                    console.log("No Calibration (skipped confirmation)");
                 }
                 isAnswered = true; // avoid buffered interface questions when client loses connection while question is active
                 return;
@@ -731,8 +756,8 @@ io.on("connection", socket => {
             //io.sockets.emit("killchildprocess", "timeout");
             logFunctions.logTimeout(tempName, new Date().toISOString(), doneTimeoutCounter, urlsDone+1);
 
-            console.log("\x1b[33mSTATUS: \x1b[0m" + "Skipping url#" + urlsDone + " " + tempUrl + " after failing to crawl " + (config.website_attempts) + " times.");
-            logFunctions.skipUrl(tempUrl.toString(), urlsDone, new Date().toISOString());
+            console.log("\x1b[33mSTATUS: \x1b[0m" + "Skipping url#" + (urlsDone + 1) + " " + currentJobData.clearUrl + " after failing to crawl " + (config.website_attempts) + " times.");
+            logFunctions.skipUrl(currentJobData.clearUrl.toString(), urlsDone + 1, new Date().toISOString());
 
             sendUrl(false);
             return;
@@ -753,7 +778,7 @@ io.on("connection", socket => {
             statFunctions.flushArray(arrayStatistics, true);
             //console.log("\x1b[31mERROR: " + "Client " + tempName + " browser timed out while visiting URL...\nKilling all browsers.", "\x1b[0m");
 
-            console.log("\x1b[33mSTATUS: \x1b[0m" + "Resending url#" + (urlsDone + 1) + " " + tempUrl + " to all workers.");
+            console.log("\x1b[33mSTATUS: \x1b[0m" + "Resending url#" + (urlsDone + 1) + " " + currentJobData.clearUrl + " to all workers.");
             sendUrl(false);
 
             logFunctions.logTimeout(tempName, new Date().toISOString(), doneTimeoutCounter, urlsDone+1);
@@ -845,9 +870,9 @@ function browserReadyTimeout(){ // timeout if the browser ready signal ist not r
         browserReadyCountdown = setTimeout(browserReadyTimeout, 120000); // restart the timeout
 
         if (config.test_run) io.to(tempId).emit("url", "test");
-        else io.to(tempId).emit("url", tempUrl);
+        else io.to(tempId).emit("visit_url", { clearUrl: currentJobData.clearUrl, urlIndex: urlsDone + 1 });
 
-        console.log("\x1b[33mSTATUS: \x1b[0m" + "Resending URL " + tempUrl + " to " + tempName);
+        console.log("\x1b[33mSTATUS: \x1b[0m" + "Resending URL " + currentJobData.clearUrl + " (Index: " + (urlsDone + 1) + ") to " + tempName);
 
     }
 }
@@ -872,23 +897,29 @@ async function createCrawlDirectory() {
             // Create the root directory
             fs.mkdir(rootDirPath, { recursive: true }, (err) => {
                 if (err) {
-                    console.error('Failed to create root crawl directory:', err);
+                    // console.error('Failed to create root crawl directory:', err); // Will be handled by original console
+                    originalConsoleError('Failed to create root crawl directory:', err); // Use a direct ref if console is already overridden
                     rootDirPath = null; // Reset if there's an error
                     return reject(err);
                 }
-                console.log('Root crawl directory created:', crawlDir);
+                // console.log('Root crawl directory created:', crawlDir); // Will be handled by new logger
+                originalConsoleLog('Root crawl directory created:', crawlDir);
                 return resolve(rootDirPath);
 
-                // Now create the URL-specific subdirectory
-                // createUrlSubdirectory(rootDirPath, resolve, reject);
             });
         }
     });
 }
 
+// Need to capture original console methods before they are potentially overridden
+// if helper.js is loaded and setupConsoleAndFileLogging is called before this point.
+// However, due to the async nature, it's better to call setupConsoleAndFileLogging AFTER createCrawlDirectory resolves.
+const originalConsoleLog = console.log;
+const originalConsoleError = console.error;
+
 function createUrlSubdirectory(rootDirPath) {
     return new Promise((resolve, reject) => {
-        const urlDirPath = path.join(rootDirPath, tempUrl);
+        const urlDirPath = path.join(rootDirPath, currentJobData.clearUrl); // Use currentJobData.clearUrl
         fs.mkdir(urlDirPath, { recursive: true }, (err) => {
             if (err) {
                 console.error('Failed to create URL subdirectory:', err);

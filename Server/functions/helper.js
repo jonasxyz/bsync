@@ -1,4 +1,7 @@
 const prompt = require('prompt');
+const fs = require('fs');
+const path = require('path');
+const util = require('util');
 
 module.exports ={
 
@@ -124,3 +127,104 @@ module.exports ={
     }
 
 }
+
+/**
+ * Sets up console and file logging.
+ * Overrides console methods to write to both terminal and a log file.
+ * @param {string} logDirectory - The directory where the log file should be stored.
+ * @param {string} logFileName - The name of the log file.
+ */
+function setupConsoleAndFileLogging(logDirectory, logFileName) {
+    const logFilePath = path.join(logDirectory, logFileName);
+
+    // Ensure log directory exists
+    if (!fs.existsSync(logDirectory)) {
+        try {
+            fs.mkdirSync(logDirectory, { recursive: true });
+        } catch (err) {
+            // Fallback to original console if directory creation fails
+            console.error('Failed to create log directory:', err);
+            return;
+        }
+    }
+
+    const logFileStream = fs.createWriteStream(logFilePath, { flags: 'a' });
+
+    const originalConsole = {
+        log: console.log,
+        error: console.error,
+        warn: console.warn,
+        info: console.info,
+        debug: console.debug,
+    };
+
+    function formatLogMessage(level, args) {
+        const timestamp = new Date().toISOString();
+        // Convert all arguments to strings
+        const messageParts = Array.from(args).map(arg => {
+            if (typeof arg === 'object' && arg !== null) {
+                try {
+                    // Attempt to stringify objects, handle circular references if any (though util.format might handle this)
+                    return util.format(arg); // util.format handles objects better than JSON.stringify for logging
+                } catch (e) {
+                    return '[Unserializable Object]';
+                }
+            } else if (arg === undefined) {
+                return 'undefined';
+            }
+            return String(arg); // Ensure everything else is a string
+        });
+        const message = messageParts.join(' ');
+        return `${timestamp} [${level.toUpperCase()}] ${message}\n`;
+    }
+
+    console.log = (...args) => {
+        originalConsole.log.apply(null, args);
+        logFileStream.write(formatLogMessage('log', args));
+    };
+
+    console.error = (...args) => {
+        originalConsole.error.apply(null, args);
+        logFileStream.write(formatLogMessage('error', args));
+    };
+
+    console.warn = (...args) => {
+        originalConsole.warn.apply(null, args);
+        logFileStream.write(formatLogMessage('warn', args));
+    };
+
+    console.info = (...args) => {
+        originalConsole.info.apply(null, args);
+        logFileStream.write(formatLogMessage('info', args));
+    };
+
+    console.debug = (...args) => {
+        originalConsole.debug.apply(null, args);
+        logFileStream.write(formatLogMessage('debug', args));
+    };
+
+    // Handle process exit to close the stream
+    process.on('exit', () => {
+        logFileStream.end();
+    });
+    process.on('SIGINT', () => {
+        logFileStream.end();
+        process.exit();
+    });
+    process.on('SIGTERM', () => {
+        logFileStream.end();
+        process.exit();
+    });
+    process.on('uncaughtException', (err) => {
+      const errorMessage = formatLogMessage('error', ['Uncaught Exception:', err]);
+      logFileStream.write(errorMessage, () => {
+        // Ensure the error is written before exiting
+        originalConsole.error('Uncaught Exception:', err);
+        process.exit(1);
+      });
+    });
+
+    console.log('Console and file logging initiated. Log file:', logFilePath);
+}
+
+module.exports.setupConsoleAndFileLogging = setupConsoleAndFileLogging;

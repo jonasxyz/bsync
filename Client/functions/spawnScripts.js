@@ -7,7 +7,7 @@ const FormData = require('form-data');
 
 const crawlEnvInfo = require("./crawlEnvInfo.js");
 const fileSystemUtils = require("./fileSystemUtils.js"); // Added import for new utility functions
-const { colorize, colors, prettySize, createDir, createUrlDir, createRemoteUrlDir, createBrowserProfileDir, replaceDotWithUnderscore } = fileSystemUtils; // Destructure imported functions
+const { colorize, colors, prettySize, createDir, createUrlDir, createRemoteUrlDir, createBrowserProfileDir, createRemoteProfileDir, replaceDotWithUnderscore, getCrawlDir, getCrawlDirTimestamp, URLS_SUBDIR, PROFILES_SUBDIR, LOGS_SUBDIR, isDirCreated } = fileSystemUtils; // Destructure imported functions
 
 var dataGathered = false;
 
@@ -29,8 +29,10 @@ var browser;
 var proxy;
 
 let visitedUrl;
+let visitedUrlIndex; // Added to store the current URL index
+let totalUrls; // Added to store the total number of URLs for formatting
 
-var harPathGlobal = null;
+var harPathGlobal = null; // Stores the full local path to the HAR file
 
 var browserFinished = false;
 var proxyClosedPromise = null;
@@ -110,7 +112,7 @@ module.exports =
         
             if (fileformat === ".js") {
 
-                spawnArgs.push("--crawldatapath", fileSystemUtils.getCrawlDir()+"/puppeteer_Data"); // Use function from fileSystemUtils
+                spawnArgs.push("--crawldatapath", browserProfileDir);
                 spawnArgs.push("--browserprofilepath", browserProfileDir);
 
                 browser = spawn( 'node', spawnArgs,{ 
@@ -120,7 +122,7 @@ module.exports =
                 // console.log("SPAWN-STRING: ",'node', spawnArgs) // DEBUG
             }else if (fileformat === ".py") {
 
-                spawnArgs.push("--crawldatapath", fileSystemUtils.getCrawlDir()+"/OpenWPMdata"); // Use function from fileSystemUtils
+                spawnArgs.push("--crawldatapath", browserProfileDir);
                 spawnArgs.push("--browserprofilepath", browserProfileDir);
 
                 browser = spawn("conda run -n openwpm --no-capture-output python -u", spawnArgs, {
@@ -368,9 +370,11 @@ module.exports =
     },
 
     sendVisitUrlCommand: function (IterationConfig) {
-        visitedUrl = IterationConfig.clearUrl;
+        visitedUrl = IterationConfig.clearUrl; // Store for handleHarFile and NFS export
+        visitedUrlIndex = IterationConfig.urlIndex; // Store the URL index (1-based)
+        totalUrls = IterationConfig.totalUrls; // Store total URLs for formatting
+        timestampFirstRequest = new Date(); // Record time for duration calculation
         if (browser && browser.stdin) {
-
             let jsonSignal = "visit_url" + JSON.stringify(IterationConfig) + "\n";
             browser.stdin.write(jsonSignal);
         } else {
@@ -462,11 +466,19 @@ module.exports =
     },
 
     spawnDump: async function (clearUrl) {
+        // This function needs to use the new directory structure if it saves files.
+        // Example: save to logs directory or a specific tcpdump directory within the crawlDir.
+        // For now, it seems to use createUrlDir which might not be the intended new structure for dumps.
+        // Assuming fileSaveDir should be a general log or dump path:
+        const logDir = path.join(getCrawlDir(), LOGS_SUBDIR);
+        await fs.promises.mkdir(logDir, { recursive: true }); // Ensure log directory exists
+        // Use visitedUrlIndex for the dump file name if available, otherwise use clearUrl only
+        const dumpFileNameBase = visitedUrlIndex !== undefined ? 
+            `${fileSystemUtils.formatUrlIndex(visitedUrlIndex, totalUrls)}_${replaceDotWithUnderscore(clearUrl)}` : 
+            replaceDotWithUnderscore(clearUrl);
+        const dumpFilePath = path.join(logDir, `tcpdump_${dumpFileNameBase}.pcapng`);
 
-        //let urlSaveName = replaceDotWithUnderscore(clearUrl) +".pcapng";
-
-        var fileSaveDir = await fileSystemUtils.createUrlDir(clearUrl); // Use function from fileSystemUtils
-
+        console.log(colorize("TCPDUMP:", "blue") + ` Starting tcpdump, saving to: ${dumpFilePath}`);
 
         return new Promise((resolve, reject) => {
             try {
@@ -488,7 +500,7 @@ module.exports =
                     //'-A',
                     '-v',
                     //'-w', fileSaveDir + replaceDotWithUnderscore(clearUrl) +'.pcapng'],
-                    '-w', fileSaveDir + fileSystemUtils.replaceDotWithUnderscore(clearUrl) +'.pcapng'], // Use function from fileSystemUtils
+                    '-w', dumpFilePath], // Use function from fileSystemUtils
        
                 { shell: true, stdio: "pipe" });
 
@@ -526,13 +538,15 @@ module.exports =
                 "-w " + fileSaveDir + replaceDotWithUnderscore(clearUrl) +".pcapng"],
             { shell: true, stdio: "pipe" }); */
 
-            console.log(colorize("TCPDUMP:", "blue") + '-w', fileSaveDir + fileSystemUtils.replaceDotWithUnderscore(clearUrl) +'.pcapng') // Use function from fileSystemUtils
+            console.log(colorize("TCPDUMP:", "blue") + '-w', dumpFilePath) // Use function from fileSystemUtils
             console.log(colorize("TCPDUMP:", "blue") + ' sudo', 'tcpdump',
              'tcp port 80 or tcp port 443',
              '-i enp1s0',
              '-s0',
              '-A',
-             '-w', fileSaveDir + fileSystemUtils.replaceDotWithUnderscore(clearUrl) +'.pcapng') // Use function from fileSystemUtils
+             '-v',
+             //'-w', fileSaveDir + replaceDotWithUnderscore(clearUrl) +'.pcapng'],
+             '-w', dumpFilePath) // Use function from fileSystemUtils
 
             tcpdump = spawn('sudo', ['tcpdump',
              "'tcp port 80 or tcp port 443'",
@@ -541,7 +555,7 @@ module.exports =
              '-A',
              '-v',
              //'-w', fileSaveDir + replaceDotWithUnderscore(clearUrl) +'.pcapng'],
-             '-w', '/home/user/Schreibtisch/dump/puppeteer/1_1/youtube_yay.pcapng'],
+             '-w', dumpFilePath],
             { shell: true, stdio: "pipe" }); 
             
            /*  tcpdump = spawn('sudo tcpdump', [
@@ -581,14 +595,9 @@ module.exports =
     },
 
     spawnProxy: async function (clearUrl) {
-
-
-        if (worker.persistent_proxy == false) var fileSaveDir = await fileSystemUtils.createUrlDir(clearUrl); // Use function from fileSystemUtils
-        
-        
-        let mitmNewHarCapabilities = true;
-
-        // Add check for existing proxy at the start
+        // The urlIndex is not directly used here as proxy is often persistent or its HAR path is set per URL.
+        // However, if non-persistent proxy needed to create URL-indexed HARs directly on spawn, 
+        // this function would need urlIndex too.
         if (proxy && proxy.pid) {
             console.log(colorize("MITMPROXY:", "magenta") + " Proxy already running with PID:", proxy.pid);
             return Promise.reject(new Error("Proxy already running"));
@@ -603,44 +612,32 @@ module.exports =
 
             try{ 
         
-                if(mitmNewHarCapabilities){
-                    proxy = spawn("mitmdump", [
-                        "--listen-host=" + worker.proxy_host,
-                        "--listen-port=" + worker.proxy_port, 
-                        // Load custom script to save HAR files and control proxy in runtime
-                        "-s /home/user/Downloads/bsync/Client/proxy/proxyController.py",
-                        "-v",
-                        "--set=console_eventlog_verbosity=info",
-                        "--set=termlog_verbosity=warn",
-                        //"--set=hardump=" + fileSaveDir + replaceDotWithUnderscore(clearUrl) + ".har" // alt
-                        // TODO for bugfixing
-                        //"--dumper_filter=" + config.activeConfig.base.master_addr + "*",
-                        //"--ignore_hosts " + "\'" + config.activeConfig.base.master_addr + "\'",
-                        //"--ignore-hosts=" + masterDomain + ",*." + masterDomain, // Dont log requests to master server 
-                        //"--ignore-hosts=" + masterDomain, // Dont log requests to master server 
-                        // Korrigierte Syntax für ignore-hosts mit exakter IP:Port-Kombination
-                        //"--ignore-hosts=^" + masterDomain.replace(/\./g, "\\.").replace(/:/g, "\\:") + "$",
+                proxy = spawn("mitmdump", [
+                    "--listen-host=" + worker.proxy_host,
+                    "--listen-port=" + worker.proxy_port, 
+                    // Load custom script to save HAR files and control proxy in runtime
+                    "-s /home/user/Downloads/bsync/Client/proxy/proxyController.py",
+                    "-v",
+                    "--set=console_eventlog_verbosity=info",
+                    "--set=termlog_verbosity=warn",
+                    //"--set=hardump=" + fileSaveDir + replaceDotWithUnderscore(clearUrl) + ".har" // alt
+                    // TODO for bugfixing
+                    //"--dumper_filter=" + config.activeConfig.base.master_addr + "*",
+                    //"--ignore_hosts " + "\'" + config.activeConfig.base.master_addr + "\'",
+                    //"--ignore-hosts=" + masterDomain + ",*." + masterDomain, // Dont log requests to master server 
+                    //"--ignore-hosts=" + masterDomain, // Dont log requests to master server 
+                    // Korrigierte Syntax für ignore-hosts mit exakter IP:Port-Kombination
+                    //"--ignore-hosts=^" + masterDomain.replace(/\./g, "\\.").replace(/:/g, "\\:") + "$",
 
-                        // oder + ",*." für regex
+                    // oder + ",*." für regex
 
-                        ],
-                    {stdio: "pipe", shell: true});
-                    // console.log("mitmdump", [
-                    //     "--listen-host=" + worker.proxy_host,
-                    //     "--listen-port=" + worker.proxy_port, 
-                    //     //"-s "+ __dirname+"/har_dump.py", 
-                    //     "--set=hardump=" + fileSaveDir + replaceDotWithUnderscore(clearUrl) + ".har"])
-                }
-                // else{
-                //     proxy = spawn("mitmdump", [
-                //         "--listen-host=" + worker.proxy_host,
-                //         "--listen-port=" + worker.proxy_port, 
-                //         "-s "+ __dirname+"/har_dump.py", 
-                //         "--set=hardump=" + fileSaveDir + replaceDotWithUnderscore(clearUrl) + ".har"],
-                //     {stdio: "pipe", shell: true});
-                //     //  " -s "+worker.script_location+"shutdown.py"
-                // }
-                
+                    ],
+                {stdio: "pipe", shell: true});
+                // console.log("mitmdump", [
+                //     "--listen-host=" + worker.proxy_host,
+                //     "--listen-port=" + worker.proxy_port, 
+                //     //"-s "+ __dirname+"/har_dump.py", 
+                //     "--set=hardump=" + fileSaveDir + replaceDotWithUnderscore(clearUrl) + ".har"])
             }
             catch (e) {
                 console.log(colorize("ERROR:", "red") + " Failed to spawn mitmproxy instance");
@@ -732,15 +729,23 @@ module.exports =
       
     },
     setHarDumpPath: async function (clearUrl) {
-
+        if (!proxy || !proxy.pid) {
+            console.error(colorize("ERROR:", "red") + " Proxy is not running. Cannot set HAR dump path.");
+            return null; // Or reject Promise
+        }
         if (!clearUrl) {
             console.log(colorize("ERROR:", "red") + " No URL provided for HAR dump path");
-            return null;
+            return null; // Or reject Promise
         }
-    
-        // Create directory for the URL if it doesn't exist
-        var fileSaveDir = await fileSystemUtils.createUrlDir(clearUrl); // Use function from fileSystemUtils
-        
+        if (visitedUrlIndex === undefined) {
+            console.error(colorize("ERROR:", "red") + " visitedUrlIndex is not set. Cannot create HAR path.");
+            return null; // Or reject
+        }
+        // Local HAR directory: [Haupt-Crawl-Ordner]/urls/[urlIndex]_[sanitized_url]/
+        const localUrlHarDir = await fileSystemUtils.createUrlDir(clearUrl, visitedUrlIndex, totalUrls); 
+        const harFileName = `${fileSystemUtils.formatUrlIndex(visitedUrlIndex, totalUrls)}_${fileSystemUtils.replaceDotWithUnderscore(clearUrl)}.har`;
+        const localHarPath = path.join(localUrlHarDir, harFileName);
+
         console.log(colorize("STATUS:", "green") + " Setting hardump path");
 
         return new Promise((resolve, reject) => {
@@ -780,7 +785,7 @@ module.exports =
             // Add temporary listener
             proxy.stdout.on('data', listener);
 
-            const harPath = fileSaveDir + fileSystemUtils.replaceDotWithUnderscore(clearUrl) + ".har"; // Use function from fileSystemUtils
+            const harPath = localHarPath;
             harPathGlobal = harPath;
 
             // Send harpath request to proxy per http request with X-Har-Path header
@@ -874,6 +879,7 @@ module.exports =
     createBrowserProfileDir: fileSystemUtils.createBrowserProfileDir, // Use function from fileSystemUtils
     colorize: fileSystemUtils.colorize, // Use function from fileSystemUtils
     colors: fileSystemUtils.colors, // Use function from fileSystemUtils
+    saveProfilesToNfs 
 }
 
 
@@ -894,18 +900,34 @@ async function exportHar() {
 }
 
 // Save exported HAR to NFS server
-async function saveHarToNfs(clearUrl) {
+async function saveHarToNfs(clearUrlForNfs) {
     return new Promise(async (resolve, reject) => {
         try {
-            console.log(colorize("STATUS:", "green") + " Saving HAR to NFS server");
-            let remoteUrlDir = await fileSystemUtils.createRemoteUrlDir(clearUrl); // Use function from fileSystemUtils
-            let harFileName = fileSystemUtils.replaceDotWithUnderscore(clearUrl) + ".har"; // Use function from fileSystemUtils
+            if (visitedUrlIndex === undefined) {
+                console.error(colorize("ERROR:", "red") + " visitedUrlIndex not set. Cannot save HAR to NFS.");
+                return reject(new Error("visitedUrlIndex not set for NFS HAR export."));
+            }
+            if (totalUrls === undefined || totalUrls === 0) {
+                console.error(colorize("ERROR:", "red") + " totalUrls not set. Cannot save HAR to NFS with proper formatting.");
+                // Optionally, proceed with a default formatting or reject
+                return reject(new Error("totalUrls not set for NFS HAR export formatting."));
+            }
+            if (!harPathGlobal || !fs.existsSync(harPathGlobal)) {
+                console.error(colorize("ERROR:", "red") + ` Local HAR file for NFS export not found: ${harPathGlobal}`);
+                return reject(new Error("Local HAR file not found for NFS export."));
+            }
+            console.log(colorize("STATUS:", "green") + ` Starting HAR to NFS server export for: ${fileSystemUtils.formatUrlIndex(visitedUrlIndex, totalUrls)}_${clearUrlForNfs}`);
+            
+            // NFS structure: [NFS_Pfad]/[Crawl_Timestamp]/visited_urls/[urlIndex]_[sanitized_url]/[client_name]/
+            const remoteNfsUrlDir = await fileSystemUtils.createRemoteUrlDir(clearUrlForNfs, visitedUrlIndex, totalUrls);
+            const harFileName = path.basename(harPathGlobal); // Get filename from harPathGlobal
+            const remoteNfsHarPath = path.join(remoteNfsUrlDir, harFileName);
+
+            console.log(colorize("INFO:", "gray") + ` Copying HAR from ${harPathGlobal} to NFS ${remoteNfsHarPath}`);
 
             // Move the HAR file to NFS
-            //console.log("HAR path global: ", harPathGlobal); // debug
-            //console.log("Remote URL dir: ", remoteUrlDir); // debug
-            fs.copyFileSync(harPathGlobal, remoteUrlDir.toString() + "/" + harFileName);
-            console.log(colorize("STATUS:", "green") + ` HAR file successfully saved to NFS at ${remoteUrlDir + "/" + harFileName}`);
+            fs.copyFileSync(harPathGlobal, remoteNfsHarPath);
+            console.log(colorize("STATUS:", "green") + ` HAR file successfully saved to NFS at ${remoteNfsHarPath}`);
 
             // Optionally delete the local HAR file
             if (baseConfig.delete_after_upload) {
@@ -913,7 +935,7 @@ async function saveHarToNfs(clearUrl) {
                 console.log(colorize("STATUS:", "green") + ` Local HAR file deleted: `, harPathGlobal);
             }
 
-            resolve(colorize("STATUS:", "green") + ` HAR file successfully saved to ${remoteUrlDir}`);
+            resolve(colorize("STATUS:", "green") + ` HAR file successfully saved to ${remoteNfsHarPath}`);
 
         } catch (error) {
             console.error(colorize("ERROR:", "red") + " Error while saving HAR to NFS:", error);
@@ -1126,4 +1148,73 @@ function processProxyIpcMessage(jsonString) {
         console.error(colorize("ERROR:", "red") + " Raw message:", jsonString);
         return null;
     }
+}
+
+/**
+ * Recursively copies a directory.
+ * @param {string} src The path to the source directory.
+ * @param {string} dest The path to the destination directory.
+ */
+function copyDirRecursive(src, dest) {
+    const exists = fs.existsSync(src);
+    const stats = exists && fs.statSync(src);
+    const isDirectory = exists && stats.isDirectory();
+    if (isDirectory) {
+        if (!fs.existsSync(dest)) {
+            fs.mkdirSync(dest, { recursive: true });
+        }
+        fs.readdirSync(src).forEach(function(childItemName) {
+            copyDirRecursive(path.join(src, childItemName),
+                             path.join(dest, childItemName));
+        });
+    } else {
+        fs.copyFileSync(src, dest);
+    }
+}
+
+/**
+ * Saves browser profiles to NFS.
+ */
+async function saveProfilesToNfs() {
+    return new Promise(async (resolve, reject) => {
+        if (!baseConfig.nfs_remote_filestorage) {
+            console.log(colorize("INFO:", "gray") + " NFS remote filestorage is disabled. Skipping profile export to NFS.");
+            return resolve("NFS profile export skipped.");
+        }
+
+        console.log(colorize("STATUS:", "green") + " Starting export of browser profiles to NFS server.");
+
+        try {
+            // Local source: [Haupt-Crawl-Ordner]/profiles/[client_name]/
+            const localProfileDir = path.join(getCrawlDir(), PROFILES_SUBDIR, worker.client_name);
+            // Remote destination: [NFS_Pfad]/[Crawl_Timestamp]/browser_profiles/[client_name]/
+            const remoteNfsProfileDir = await fileSystemUtils.createRemoteProfileDir(); 
+
+            if (!fs.existsSync(localProfileDir)) {
+                console.warn(colorize("WARNING:", "yellow") + ` Local profile directory not found, skipping NFS export: ${localProfileDir}`);
+                return resolve("Local profile directory not found.");
+            }
+
+            console.log(colorize("INFO:", "gray") + ` Copying from local: ${localProfileDir} to NFS: ${remoteNfsProfileDir}`);
+
+            // Use custom recursive copy function
+            copyDirRecursive(localProfileDir, remoteNfsProfileDir);
+            console.log(colorize("STATUS:", "green") + ` Browser profile for ${worker.client_name} successfully copied to NFS: ${remoteNfsProfileDir}`);
+                
+            // Optionally delete the local profile directory after upload
+            if (baseConfig.delete_after_upload) {
+                try {
+                    fs.rmSync(localProfileDir, { recursive: true, force: true });
+                    console.log(colorize("STATUS:", "green") + ` Local profile directory deleted: ${localProfileDir}`);
+                } catch (rmErr) {
+                    console.error(colorize("ERROR:", "red") + ` Error deleting local profile directory ${localProfileDir}:`, rmErr);
+                }
+            }
+            resolve(`Profile for ${worker.client_name} copied to NFS.`);
+
+        } catch (error) {
+            console.error(colorize("ERROR:", "red") + " Error during profile export to NFS:", error);
+            reject(error);
+        }
+    });
 }

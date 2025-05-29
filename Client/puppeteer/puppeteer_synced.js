@@ -23,12 +23,21 @@ const proxyport = args.proxyport;
 const headless = args.headless || false;
 const datapath = args.datapath || null;
 const reset = args.reset || false;
+const browserprofilepath = args.browserprofilepath || null;
 
 const workerConfig = config.activeConfig.worker;
 
 
 let browser, page;
 let userDataDir = datapath ? path.resolve(datapath) : null;
+
+// If browser profile path is provided, use it instead of datapath
+if (browserprofilepath && !datapath) {
+    // Create unique profile directory within the provided browser profile path
+    // userDataDir = path.join(browserprofilepath, `puppeteer_profile_${Date.now()}`);
+    userDataDir = browserprofilepath; // Use the provided path directly
+    console.log(`Using browser profile path: ${userDataDir}`);
+}
 
 async function launchBrowser() {
     const launchOptions = {
@@ -140,11 +149,12 @@ async function resetBrowser() {
     if (!datapath && userDataDir) {
         try {
             if (fs.existsSync(userDataDir)) {
-                fs.rmSync(userDataDir, { recursive: true, force: true });
-                console.log(`Deleted profile directory: ${userDataDir}`);
+                // fs.rmSync(userDataDir, { recursive: true, force: true }); // Do not delete the profile directory
+                // console.log(`Deleted profile directory: ${userDataDir}`);
+                console.log(`Reusing profile directory: ${userDataDir}`);
             }
         } catch (err) {
-            console.error("Error deleting profile directory:", err);
+            console.error("Error checking profile directory:", err);
         }
     }
 

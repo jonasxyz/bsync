@@ -18,7 +18,8 @@ try {
   console.error(`Error loading configuration: ${error.message}`);
   console.log('Using default configuration');
   var worker = { 
-    browser_path: "/usr/bin/firefox", 
+    //browser_path: "/usr/bin/firefox", 
+    browser_path: "/opt/firefox-138.0.1/firefox", 
     enable_proxy: false,
     proxy_host: "localhost", 
     proxy_port: 8080
@@ -52,6 +53,34 @@ let profileCreated = false;
 // Proxy configuration - initialize with values from config if possible
 let proxyHost = worker.proxy_host || null;
 let proxyPort = worker.proxy_port || null;
+
+// AutoLoad configuration
+let firefoxInstallPath = null;
+
+// Parse command line arguments for proxy settings and browser profile path
+let customProfilePath = null;
+function parseArguments() {
+  process.argv.forEach((arg, index) => {
+    if (arg === '--proxyhost' && process.argv[index + 1]) {
+      proxyHost = process.argv[index + 1];
+    }
+    if (arg === '--proxyport' && process.argv[index + 1]) {
+      proxyPort = process.argv[index + 1];
+    }
+    if (arg === '--browserprofilepath' && process.argv[index + 1]) {
+      customProfilePath = process.argv[index + 1];
+      console.log('Custom profile path set:', customProfilePath);
+    }
+    if (arg === '--firefox-path' && process.argv[index + 1]) {
+      firefoxInstallPath = process.argv[index + 1];
+      console.log('Firefox installation path set:', firefoxInstallPath);
+    }
+  });
+  
+  if (proxyHost || proxyPort) {
+    console.log(`Proxy settings detected: ${proxyHost}:${proxyPort}`);
+  }
+}
 
 // WebSocket server for communication with Firefox extension
 const wss = new WebSocket.Server({ port: WS_PORT });
@@ -134,12 +163,21 @@ async function launchBrowser() {
     console.log('Starting Firefox...');
     
     // Create Firefox profile using profile manager
-    const profileInfo = profileManager.createFirefoxProfile({
+    const profileOptions = {
       extensionPath: EXTENSION_PATH,
       enableProxy: worker.enable_proxy,
       proxyHost: proxyHost,
-      proxyPort: proxyPort
-    });
+      proxyPort: proxyPort,
+      firefoxPath: firefoxInstallPath,
+    };
+
+    // If custom profile path is provided, use it as base directory
+    if (customProfilePath) {
+      profileOptions.customProfilePath = customProfilePath;
+      console.log(`Using custom profile base path: ${customProfilePath}`);
+    }
+
+    const profileInfo = profileManager.createFirefoxProfile(profileOptions);
     
     if (!profileInfo) {
       throw new Error('Error creating Firefox profile');
@@ -208,7 +246,7 @@ async function shutdownBrowser( restart = false) {
   }
   
   // Clean up old profile
-  profileManager.cleanupTempProfile();
+  //profileManager.cleanupTempProfile();
   
   // Restart Firefox with new profile
   if (restart) {
@@ -217,26 +255,9 @@ async function shutdownBrowser( restart = false) {
   return true;
 }
 
-// Todo probably wont be used anymore
-// Parse command line arguments for proxy settings
-function parseArguments() {
-  process.argv.forEach((arg, index) => {
-    if (arg === '--proxyhost' && process.argv[index + 1]) {
-      proxyHost = process.argv[index + 1];
-    }
-    if (arg === '--proxyport' && process.argv[index + 1]) {
-      proxyPort = process.argv[index + 1];
-    }
-  });
-  
-  if (proxyHost || proxyPort) {
-    console.log(`Proxy settings detected: ${proxyHost}:${proxyPort}`);
-  }
-}
-
 // Clean up on exit
 process.on('exit', () => {
-  profileManager.cleanupTempProfile();
+  //profileManager.cleanupTempProfile();
 });
 
 process.on('SIGINT', () => {
@@ -254,7 +275,7 @@ process.on('SIGINT', () => {
     }
   }
   
-  profileManager.cleanupTempProfile();
+  //profileManager.cleanupTempProfile();
   
   // Close WebSocket server
   if (wss) {

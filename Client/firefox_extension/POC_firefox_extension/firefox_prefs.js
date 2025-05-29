@@ -11,6 +11,7 @@
  * @param {boolean} options.enableProxy - Whether to enable proxy
  * @param {string} options.proxyHost - Proxy host address
  * @param {number} options.proxyPort - Proxy port number
+ * @param {boolean} options.enableAutoConfig - Whether to enable AutoConfig for extension autoload
  * @returns {string} Firefox preferences as a string
  */
 function getDefaultPreferences(options = {}) {
@@ -46,6 +47,20 @@ function getDefaultPreferences(options = {}) {
     "user_pref(\"extensions.webextensions.remote\", false);",
     "user_pref(\"extensions.langpacks.signatures.required\", false);",
   ];
+
+  // Add AutoConfig settings for extension autoload if enabled
+  if (options.enableAutoConfig) {
+    prefs.push(...[
+      "// AutoConfig settings for automatic extension loading",
+      // Disable the sandbox to enable running unsafe code
+      "user_pref(\"general.config.sandboxLevel\", 0);",
+      "user_pref(\"general.config.sandbox_enabled\", false);",
+      // The file named in the following line must be in [Firefox program folder]
+      "user_pref(\"general.config.filename\", \"userChrome.js\");",
+      "user_pref(\"general.config.obscure_value\", 0);"
+
+    ]);
+  }
 
   // Add proxy settings if needed
   if (options.enableProxy && options.proxyHost && options.proxyPort) {

@@ -6,6 +6,8 @@ const axios = require('axios'); // for HTTP file upload
 const FormData = require('form-data');
 
 const crawlEnvInfo = require("./crawlEnvInfo.js");
+const fileSystemUtils = require("./fileSystemUtils.js"); // Added import for new utility functions
+const { colorize, colors, prettySize, createDir, createUrlDir, createRemoteUrlDir, createBrowserProfileDir, replaceDotWithUnderscore } = fileSystemUtils; // Destructure imported functions
 
 var dataGathered = false;
 
@@ -21,11 +23,7 @@ const fileformat = path.extname(worker.crawl_script);
 var childExists = false;
 var isCancelled = false;
 
-var crawlDir;
-var dirCreated = false;
-var dirTimestamp;
-var urlSaveDir;
-var crawlDirTimestamp;
+var timestampFirstRequest;
 
 var browser;
 var proxy;
@@ -36,41 +34,6 @@ var harPathGlobal = null;
 
 var browserFinished = false;
 var proxyClosedPromise = null;
-
-// Helper function for colored console output
-const colors = {
-    reset: "\x1b[0m",
-
-    fg: {
-        black: "\x1b[30m",
-        red: "\x1b[31m",
-        green: "\x1b[32m",
-        yellow: "\x1b[33m",
-        blue: "\x1b[34m",
-        magenta: "\x1b[35m",
-        cyan: "\x1b[36m",
-        white: "\x1b[37m",
-        gray: "\x1b[90m"
-    }
-};
-
-/**
- * Utility function to format file sizes in human readable format
- * @param {number} bytes - Size in bytes
- * @returns {string} - Formatted size string
- */
-function prettySize(bytes) {
-    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-    let size = bytes;
-    let unitIndex = 0;
-    
-    while (size >= 1024 && unitIndex < units.length - 1) {
-        size /= 1024;
-        unitIndex++;
-    }
-    
-    return `${size.toFixed(1)} ${units[unitIndex]}`;
-}
 
 module.exports =
 {
@@ -85,7 +48,7 @@ module.exports =
             //tcpdump = spawn( 'tcpdump', ["-s0", "-A 'tcp port 80 or tcp port 443'", "-w"+ worker.pcapng_destination + "pcapng/1.pcpapng"],{ shell: true, stdio: "pipe" });
             //tcpdump = spawn( 'tcpdump', ["-s0 -A 'tcp port 80 or tcp port 443' -w", worker.pcapng_destination + "1.pcapng"],{ shell: true, stdio: "pipe", detached: true });
 
-            let urlSaveDir = await createUrlDir(clearUrl);
+            let urlSaveDir = await fileSystemUtils.createUrlDir(clearUrl); // Use function from fileSystemUtils
 
             //console.log("URLSAVENAME in sslkeylogfile: " + urlSaveDir  +"sslkeylogfileworker.log");
 
@@ -107,9 +70,20 @@ module.exports =
 
         }else{
             
-            if(!dirCreated) { // directory for OpenWPMs captured files
-                crawlDir = await createDir();
+            if(!fileSystemUtils.isDirCreated()) { // Use function from fileSystemUtils
+                // crawlDir is set within createDir called by worker.js
+                // No need to call createDir here directly anymore
             } 
+            
+            // Create browser profile directory
+            let browserProfileDir;
+            try {
+                browserProfileDir = await fileSystemUtils.createBrowserProfileDir(); // Use function from fileSystemUtils
+            } catch (error) {
+                console.error(colorize("ERROR:", "red") + " Failed to create browser profile directory:", error);
+                throw error;
+            }
+            
             //browser = spawn( 'node', [worker.crawl_script, url, worker.headless, proxyHost, worker.proxy_port, userAgent, waitingTime],
             //{ cwd: worker.script_path, stdio: "pipe" }); // todo check detached
 
@@ -136,7 +110,8 @@ module.exports =
         
             if (fileformat === ".js") {
 
-                spawnArgs.push("--crawldatapath", crawlDir+"/puppeteer_Data");
+                spawnArgs.push("--crawldatapath", fileSystemUtils.getCrawlDir()+"/puppeteer_Data"); // Use function from fileSystemUtils
+                spawnArgs.push("--browserprofilepath", browserProfileDir);
 
                 browser = spawn( 'node', spawnArgs,{ 
                     cwd: worker.script_path, 
@@ -145,7 +120,8 @@ module.exports =
                 // console.log("SPAWN-STRING: ",'node', spawnArgs) // DEBUG
             }else if (fileformat === ".py") {
 
-                spawnArgs.push("--crawldatapath", crawlDir+"/OpenWPMdata");
+                spawnArgs.push("--crawldatapath", fileSystemUtils.getCrawlDir()+"/OpenWPMdata"); // Use function from fileSystemUtils
+                spawnArgs.push("--browserprofilepath", browserProfileDir);
 
                 browser = spawn("conda run -n openwpm --no-capture-output python -u", spawnArgs, {
                     shell: true,
@@ -230,9 +206,6 @@ module.exports =
                 
                 // console.log("\x1b[36mSOCKETIO:\x1b[0m Sending ITERATION_DONE");
                 // await socket.emit("ITERATION_DONE");
-
-                //console.log("\n---------------------------------------------------\n")
-                // browser.stdin.write("check_browser_ready\n");
                 
                 // Reset flags for next iteration
                 browserFinished = false;
@@ -250,9 +223,12 @@ module.exports =
 
             }if (data.toString().includes("URL_DONE")) { 
 
+                let timestampRequestToDone = new Date().toISOString();
+                const elapsedSeconds = (new Date(timestampRequestToDone) - timestampFirstRequest) / 1000;
+                console.log(colorize("TIMESTAMP:", "cyan") + " Timestamp of URL_DONE: " + timestampRequestToDone);
+                console.log(colorize("TIMESTAMP:", "cyan") + " Elapsed time since first request: " + elapsedSeconds.toFixed(2) + " seconds");
                 socket.emit("URL_DONE");
                 console.log(colorize("SOCKETIO:", "cyan") + " Sending URL_DONE");     
-                // writeSaveHar(); // debug^
 
                 // await this.setHarDumpPath(visitedUrl);
                 
@@ -405,9 +381,9 @@ module.exports =
     cleanupProcesses: async function (exiting) { 
 
         if(exiting){
-            console.log(colorize("STATUS:", "green") + "\nClosing child processes before exiting..");
+            console.log(colorize("STATUS:", "green") + "Closing child processes before exiting..");
         }else{
-            console.log(colorize("STATUS:", "green") + "\nCancelling child processes because of timeout..");
+            console.log(colorize("STATUS:", "green") + "Cancelling child processes because of timeout..");
         }
 
         isCancelled = true;
@@ -422,10 +398,30 @@ module.exports =
             //if (fileformat === ".js") process.kill(-browser.pid); //browser.kill("SIGINT");
             if (fileformat === ".js"){
                 try{
-                    await browser.kill("SIGINT");
-                    console.log(colorize("INFO:", "gray") + " Puppeteer process killed");
+                    // Send shutdown command to Firefox controller first
+                    if (browser && browser.stdin) {
+                        console.log(colorize("INFO:", "gray") + " Sending shutdown command to Firefox controller");
+                        browser.stdin.write("shutdown\n");
+                        
+                        // Wait a bit for graceful shutdown
+                        await new Promise(resolve => setTimeout(resolve, 3000));
+                    }
+                    
+                    // If process is still running, force kill
+                    if (browser && browser.pid) {
+                        await browser.kill("SIGINT");
+                        console.log(colorize("INFO:", "gray") + " Firefox controller process killed");
+                    }
                 }catch(error){
                     console.log(colorize("ERROR:", "red") + " Error while killing browser process:", error);
+                    // Force kill if graceful shutdown failed
+                    try {
+                        if (browser && browser.pid) {
+                            process.kill(browser.pid, 'SIGKILL');
+                        }
+                    } catch (forceKillError) {
+                        console.log(colorize("ERROR:", "red") + " Error with force kill:", forceKillError);
+                    }
                 }
             }
             if (fileformat === ".py"){
@@ -467,21 +463,9 @@ module.exports =
 
     spawnDump: async function (clearUrl) {
 
-        //if(dirCreated == false) await createDir();
-
-        // Create folder for every webite to save pcanp + sslkeylogfile / har file
-        //if(!dirCreated) currDir = await createDir() + "/" + clearUrl + "/";
-
-
-        //let currDir = dirName + "/" + clearUrl;
-        //fs.mkdir(currDir, { recursive: true })
-        //fs.mkdir(currDir, { recursive: true }, (err) => {
-        //    if (err) { console.error(err); }
-        //})
-
         //let urlSaveName = replaceDotWithUnderscore(clearUrl) +".pcapng";
 
-        var fileSaveDir = await createUrlDir(clearUrl);
+        var fileSaveDir = await fileSystemUtils.createUrlDir(clearUrl); // Use function from fileSystemUtils
 
 
         return new Promise((resolve, reject) => {
@@ -504,7 +488,7 @@ module.exports =
                     //'-A',
                     '-v',
                     //'-w', fileSaveDir + replaceDotWithUnderscore(clearUrl) +'.pcapng'],
-                    '-w', fileSaveDir + replaceDotWithUnderscore(clearUrl) +'.pcapng'],
+                    '-w', fileSaveDir + fileSystemUtils.replaceDotWithUnderscore(clearUrl) +'.pcapng'], // Use function from fileSystemUtils
        
                 { shell: true, stdio: "pipe" });
 
@@ -542,13 +526,13 @@ module.exports =
                 "-w " + fileSaveDir + replaceDotWithUnderscore(clearUrl) +".pcapng"],
             { shell: true, stdio: "pipe" }); */
 
-            console.log(colorize("TCPDUMP:", "blue") + '-w', fileSaveDir + replaceDotWithUnderscore(clearUrl) +'.pcapng')
+            console.log(colorize("TCPDUMP:", "blue") + '-w', fileSaveDir + fileSystemUtils.replaceDotWithUnderscore(clearUrl) +'.pcapng') // Use function from fileSystemUtils
             console.log(colorize("TCPDUMP:", "blue") + ' sudo', 'tcpdump',
              'tcp port 80 or tcp port 443',
              '-i enp1s0',
              '-s0',
              '-A',
-             '-w', fileSaveDir + replaceDotWithUnderscore(clearUrl) +'.pcapng')
+             '-w', fileSaveDir + fileSystemUtils.replaceDotWithUnderscore(clearUrl) +'.pcapng') // Use function from fileSystemUtils
 
             tcpdump = spawn('sudo', ['tcpdump',
              "'tcp port 80 or tcp port 443'",
@@ -598,33 +582,9 @@ module.exports =
 
     spawnProxy: async function (clearUrl) {
 
-        // console.log("dircreated = ", dirCreated) // debug
 
-        // if(!dirCreated) { // always create dir with crawler start
-        //     crawlDir = await createDir();
-        // } 
-
-        //if(!dirCreated) await createDir();
-
-        //console.log(clearUrl, "spawn clear URLL")
-
-        //if(!dirCreated) currDir = await createDir() + "/" + clearUrl;
-
-        //fs.mkdirSync(worker.pcapng_destination + "/1/" + clearUrl, { recursive: true })
-        //let currDir = dirName + "/" + clearUrl;
-        //fs.mkdir(currDir, { recursive: true })
-        //fs.mkdir(currDir, { recursive: true }, (err) => {
-         //   if (err) { console.error(err); }
-        //})
-
-        //'tcpdump', ["-s0", "-A 'tcp port 80 or tcp port 443'", "-w"+ worker.har_destination + "pcapng/1.pcpapng" ]
-
-        //let urlSaveName = clearUrl.replace(/^https?\:\/\//i, "")+ ".har"; // todo check ob noch gebraucht
-        //let urlSaveName = replaceDotWithUnderscore(clearUrl) +".har";
-
-        if (worker.persistent_proxy == false) var fileSaveDir = await createUrlDir(clearUrl);
+        if (worker.persistent_proxy == false) var fileSaveDir = await fileSystemUtils.createUrlDir(clearUrl); // Use function from fileSystemUtils
         
-        //console.log("URLSAVENAME in spawmproxyist: --set=hardump=" + fileSaveDir + replaceDotWithUnderscore(clearUrl) + ".har")
         
         let mitmNewHarCapabilities = true;
 
@@ -760,6 +720,7 @@ module.exports =
                 }
             })
 
+        // TODO: remove this function
         // Funktion zum dynamischen Ändern des Speicherorts oder zum Speichern der HAR-Datei
         this.saveHar = function(newFileSaveDir) {
             console.log(colorize("MITMPROXY:", "magenta") + " Sending command to save HAR to:", newFileSaveDir);
@@ -767,10 +728,6 @@ module.exports =
             proxy.stdin.write(":savehar " + newFileSaveDir + "\n");  // Command über stdin senden
         };
 
-        // Beispielaufruf während der Laufzeit, um HAR-Datei zu speichern
-        // setTimeout(() => {
-        //     this.saveHar("/home/user/Desktop/test.har");  // HAR-Datei in neuem Pfad speichern
-        // }, 1000);  // nach 5 Sekunden
         });
       
     },
@@ -782,7 +739,7 @@ module.exports =
         }
     
         // Create directory for the URL if it doesn't exist
-        var fileSaveDir = await createUrlDir(clearUrl);
+        var fileSaveDir = await fileSystemUtils.createUrlDir(clearUrl); // Use function from fileSystemUtils
         
         console.log(colorize("STATUS:", "green") + " Setting hardump path");
 
@@ -823,7 +780,7 @@ module.exports =
             // Add temporary listener
             proxy.stdout.on('data', listener);
 
-            const harPath = fileSaveDir + replaceDotWithUnderscore(clearUrl) + ".har";
+            const harPath = fileSaveDir + fileSystemUtils.replaceDotWithUnderscore(clearUrl) + ".har"; // Use function from fileSystemUtils
             harPathGlobal = harPath;
 
             // Send harpath request to proxy per http request with X-Har-Path header
@@ -850,31 +807,6 @@ module.exports =
         return harPath;
 
 
-    },
-
-    // Create directory to store generated files for current crawl
-    createDir: async function (crawlTimestamp) {
-
-        return new Promise((resolve, reject) => {
-
-        //const dirName = `${dateString}_${timeString}`+worker.client_name;
-
-        crawlDirTimestamp = crawlTimestamp;
-        crawlDir = checkBackslash(worker.har_destination) + crawlTimestamp;
-        //crawlDirOpenWPM = checkBackslash(worker.har_destination) + crawlDirTimestamp;
-
-        fs.mkdir(crawlDir, { recursive: true }, (err) => {
-            if (err) {
-                console.error(colorize("ERROR:", "red"), err);
-                reject(err);
-
-            } else {
-                dirCreated = true;
-                console.log(colorize("STATUS:", "green") + ` Created crawl directory: ${crawlDir}`);
-                resolve(crawlDir);
-            }
-        });
-        })
     },
 
     handleHarFile: async function () {
@@ -939,34 +871,11 @@ module.exports =
         // Not catching error because responsing the http request with proxy kills the functionality
 
     },
-    colorize: function (text, color) {
-        return colors.fg[color] + text + colors.reset;
-    },
-    colors: {
-        reset: "\x1b[0m",
-        fg: {
-            black: "\x1b[30m",
-            red: "\x1b[31m",
-            green: "\x1b[32m",
-            yellow: "\x1b[33m",
-            blue: "\x1b[34m",
-            magenta: "\x1b[35m",
-            cyan: "\x1b[36m",
-            white: "\x1b[37m",
-            gray: "\x1b[90m"
-        }
-    },
+    createBrowserProfileDir: fileSystemUtils.createBrowserProfileDir, // Use function from fileSystemUtils
+    colorize: fileSystemUtils.colorize, // Use function from fileSystemUtils
+    colors: fileSystemUtils.colors, // Use function from fileSystemUtils
 }
 
-// Testing for proxy ipc, not working yet todo
-function writeSaveHar() { 
-    if (proxy && proxy.stdin) {
-        proxy.stdin.write(":save.har");
-        console.log("Triggered save.har command");
-    } else {
-        console.error("Proxy process is not available.");
-    }
-}
 
 // Send HTTP request to proxy to trigger hardump function
 async function exportHar() {
@@ -982,8 +891,6 @@ async function exportHar() {
     }).catch(err => {
         // console.log("Failed to send hardump request:",); //err); DEBUG
     });
-    
-
 }
 
 // Save exported HAR to NFS server
@@ -991,8 +898,8 @@ async function saveHarToNfs(clearUrl) {
     return new Promise(async (resolve, reject) => {
         try {
             console.log(colorize("STATUS:", "green") + " Saving HAR to NFS server");
-            let remoteUrlDir = await createRemoteUrlDir(clearUrl);
-            let harFileName = replaceDotWithUnderscore(clearUrl) + ".har";
+            let remoteUrlDir = await fileSystemUtils.createRemoteUrlDir(clearUrl); // Use function from fileSystemUtils
+            let harFileName = fileSystemUtils.replaceDotWithUnderscore(clearUrl) + ".har"; // Use function from fileSystemUtils
 
             // Move the HAR file to NFS
             //console.log("HAR path global: ", harPathGlobal); // debug
@@ -1048,131 +955,81 @@ function waitForHarFile(harPath, timeout = 10000) {
 async function killProxy() {
     if (proxy && proxy.pid) {
         return new Promise((resolve, reject) => {
-            try {
-                // Wait for the proxy to actually close
-                proxy.on("close", (data) => {
-                    console.log(colorize("STATUS:", "green") + " Proxy process closed"); // Seems proxy is not answering after shutdown command
+            let isResolved = false;
+            
+            const resolveOnce = () => {
+                if (!isResolved) {
+                    isResolved = true;
                     resolve();
-                });
-                
+                }
+            };
+            
+            try {
                 console.log(colorize("STATUS:", "green") + " Sending shutdown command to proxy..."); 
 
+                // Wait for the proxy to actually close
+                const closeHandler = (data) => {
+                    console.log(colorize("STATUS:", "green") + " Proxy process closed gracefully");
+                    proxy.removeListener("close", closeHandler); // Remove listener to prevent memory leaks
+                    resolveOnce();
+                };
+                
+                proxy.on("close", closeHandler);
+
                 // Send HTTP request to trigger graceful shutdown
-                // Todo graceful shutdown not working atm, exkill is used later instead
                 axios.get('http://shutdown.proxy.local/', {
                     proxy: {
                         host: worker.proxy_host,
                         port: worker.proxy_port,
                         protocol: 'http'
-                    }
+                    },
+                    timeout: 2000 // Add timeout to HTTP request
                 }).catch(err => {
                     // Expecting this to fail as the proxy shuts down
-                    console.log(colorize("ERROR:", "red") + " Failed to send graceful shutdown request:",);  // err);
+                    console.log(colorize("INFO:", "gray") + " Graceful shutdown request completed (expected)");
                 });
 
                 // Set a timeout in case the clean shutdown fails
                 setTimeout(() => {
-                    console.log(colorize("MITMPROXY:", "magenta") + colorize(" Proxy shutdown timeout - forcing kill", "red"));
-                    exkill(proxy.pid);
-                    //resolve();
-                }, 4000); // 4 second timeout               
+                    if (!isResolved) {
+                        console.log(colorize("MITMPROXY:", "magenta") + colorize(" Proxy shutdown timeout - forcing kill", "red"));
+                        try {
+                            exkill(proxy.pid, (error) => {
+                                if (error) {
+                                    console.log(colorize("ERROR:", "red") + " Error with exkill:", error);
+                                } else {
+                                    console.log(colorize("STATUS:", "green") + " Proxy force-killed successfully");
+                                }
+                                proxy.removeListener("close", closeHandler); // Clean up listener
+                                resolveOnce();
+                            });
+                        } catch (killError) {
+                            console.log(colorize("ERROR:", "red") + " Error during force kill:", killError);
+                            proxy.removeListener("close", closeHandler);
+                            resolveOnce();
+                        }
+                    }
+                }, 4000); // 4 second timeout
+
+                // Additional safety timeout to ensure we never hang indefinitely
+                setTimeout(() => {
+                    if (!isResolved) {
+                        console.log(colorize("ERROR:", "red") + " Emergency timeout - force resolving proxy kill");
+                        proxy.removeListener("close", closeHandler);
+                        resolveOnce();
+                    }
+                }, 8000); // 8 second emergency timeout
+                
             } catch (error) {
                 console.error(colorize("ERROR:", "red") + " Error while killing proxy process:", error);
-                reject(error);
+                resolveOnce(); // Resolve instead of reject to prevent hanging
             }
         });
-    }
-}
-
-// Create directory for each crawled URL
-async function createUrlDir(clearUrl) {
-
-    let urlSaveName = replaceDotWithUnderscore(clearUrl);
-
-    urlSaveDir = crawlDir + "/" + urlSaveName + "/";
-
-    return new Promise((resolve, reject) => {
-
-        fs.mkdir(urlSaveDir, { recursive: true }, (err) => {
-            if (err) {
-                console.error(colorize("ERROR:", "red") + " ERROR creating URL directory:", err);
-                reject(err);
-
-            } else {
-                //console.log("STATUS: Created directory: " + urlSaveDir);
-                console.log(colorize("INFO:", "gray") + " URL directory created:", urlSaveDir);
-                resolve(urlSaveDir);
-            }
-        });
-    });
-}
-
-// Create directory for each crawled URL on NFS server
-async function createRemoteUrlDir(clearUrl) {
-    return new Promise((resolve, reject) => {
-        let urlSaveName = replaceDotWithUnderscore(clearUrl);
-        let remoteUrlDir = baseConfig.nfs_server_path + crawlDirTimestamp + "/" + urlSaveName + "/" + worker.client_name ;
-        
-        fs.mkdir(remoteUrlDir, { recursive: true }, (err) => {
-            if (err) {
-                console.error(colorize("ERROR:", "red") + " Error creating remote directory:", err);
-                reject(err);
-            } else {
-                console.log(colorize("STATUS:", "green") + " Created remote directory: " + remoteUrlDir);
-                resolve(remoteUrlDir);
-            }
-        });
-    });
-}
-
-// Check if path ends with a backslash and add if not
-function checkBackslash(str) {
-
-    if (str.endsWith('/')) {
-        return str;
     } else {
-        return str + '/';
+        console.log(colorize("INFO:", "gray") + " No proxy process to kill");
+        return Promise.resolve();
     }
 }
-
-// Replace all characters that could be problematic in file paths
-function replaceDotWithUnderscore(str) {
-    return str.replace(/\//g, '-').replace(/[\.:?&=]/g, '_');
-}
-
-function colorize(text, color) {
-    return colors.fg[color] + text + colors.reset;
-}
-
-// moved to export for using in worker.js
-// // Create directory to store generated files for current crawl
-// async function createDir(crawlTimestamp) {
-
-//     return new Promise((resolve, reject) => {
-
-//     const now = new Date();
-//     const dateString = now.toISOString().slice(0, 10);
-//     const timeString = now.toTimeString().split(' ')[0].replace(/:/g, '-');
-
-//     crawlDirTimestamp = `${dateString}_${timeString}`;
-//     //const dirName = `${dateString}_${timeString}`+worker.client_name;
-
-//     const crawlDir = checkBackslash(worker.har_destination) + crawlTimestamp;
-//     //crawlDirOpenWPM = checkBackslash(worker.har_destination) + crawlDirTimestamp;
-
-//     fs.mkdir(crawlDir, { recursive: true }, (err) => {
-//         if (err) {
-//             console.error(err);
-//             reject(err);
-
-//         } else {
-//             dirCreated = true;
-//             console.log(`STATUS: Created crawl directory: ${crawlDir}`);
-//             resolve(crawlDir);
-//         }
-//     });
-//     })
-// }
 
 /**
  * Process JSON IPC messages from the proxy
@@ -1200,7 +1057,7 @@ function processProxyIpcMessage(jsonString) {
                 break;
 
             case "har_export_completed":
-                console.log(colorize("MITMPROXY:", "magenta") + ` HAR export completed: ${data.file_path} (${prettySize(data.file_size)})`);
+                console.log(colorize("MITMPROXY:", "magenta") + ` HAR export completed: ${data.file_path} (${fileSystemUtils.prettySize(data.file_size)})`); // Use function from fileSystemUtils
                 if (PROXY_DEBUG_OUTPUT) {
                     console.log(colorize("MITMPROXY:", "magenta") + ` Flows before/after clear: ${data.flows_before_clear}/${data.flows_after_clear}`);
                 }
@@ -1218,6 +1075,7 @@ function processProxyIpcMessage(jsonString) {
 
             case "first_request_detected":
                 console.log(colorize("MITMPROXY:", "magenta") + ` First request detected: ${data.method} ${data.url}`);
+                //timestampFirstRequest = new Date();
                 break;
 
             case "flows_cleared":

@@ -23,18 +23,30 @@ let profileCreated = false;
  * @param {boolean} options.enableProxy - Whether to enable proxy
  * @param {string} options.proxyHost - Proxy host address
  * @param {number} options.proxyPort - Proxy port number
+ * @param {string} [options.customProfilePath] - Custom base path for the profile directory
+ * @param {string} [options.firefoxPath] - Path to Firefox installation for AutoConfig
  * @returns {Object|null} Profile information or null if creation failed
  */
 function createFirefoxProfile(options) {
   try {
-    // Create temporary directory for the profile
-    const profileDir = path.join(os.tmpdir(), `firefox_profile_${Date.now()}`);
-    console.log(`Creating profile directory at: ${profileDir}`);
+    // Create profile directory
+    let profileDir;
+    if (options.customProfilePath) {
+      // Use custom path as base
+      profileDir = options.customProfilePath; // Use the provided path directly
+      console.log(`Using profile directory: ${profileDir}`);
+    } else {
+      // Use temporary directory
+      profileDir = path.join(os.tmpdir(), `firefox_profile_${Date.now()}`);
+      console.log(`Creating profile directory at: ${profileDir}`);
+    }
     
     fs.mkdirSync(profileDir, { recursive: true });
     
     // Write preferences to user.js file
-    const preferencesContent = getDefaultPreferences(options);
+    const preferencesContent = getDefaultPreferences({
+      ...options,
+    });
     fs.writeFileSync(path.join(profileDir, 'user.js'), preferencesContent);
     
     // Create basic prefs.js file
@@ -57,24 +69,12 @@ function createFirefoxProfile(options) {
       return null;
     }
     
-    // Create extension directory with ID as name
-    const extensionTargetDir = path.join(extensionsDir, `${extensionId}.xpi`);
-    
-    // Copy extension files to the extensions directory
-    copyDir(options.extensionPath, extensionsDir);
     
     profileCreated = true;
     tempProfileDir = profileDir;
     
-    // Copy extension directly to extensions folder
-    // Direct approach for extension installation
-    fs.writeFileSync(
-      path.join(extensionsDir, `${extensionId}`), 
-      path.resolve(options.extensionPath)
-    );
-    
     return {
-      profilePath: profileDir
+      profilePath: profileDir,
     };
   } catch (error) {
     console.error('Error creating Firefox profile:', error);
@@ -145,20 +145,23 @@ function setupProxySettings(profileDir, proxyHost, proxyPort) {
 /**
  * Clean up temporary profile directory
  * 
+ * @param {Object} options - Cleanup options
  * @returns {boolean} Success status
  */
-function cleanupTempProfile() {
+function cleanupTempProfile(options = {}) {
+  let success = true;
+  
+  // Clean up profile directory
   if (tempProfileDir && fs.existsSync(tempProfileDir)) {
     try {
       console.log(`Removing temporary profile directory: ${tempProfileDir}`);
       fs.rmSync(tempProfileDir, { recursive: true, force: true });
-      return true;
     } catch (error) {
       console.error('Error removing temporary profile directory:', error);
-      return false;
+      success = false;
     }
   }
-  return false;
+  return success;
 }
 
 /**
@@ -184,5 +187,6 @@ module.exports = {
   setupProxySettings,
   cleanupTempProfile,
   getTempProfileDir,
-  isProfileCreated
+  isProfileCreated,
+  // findFirefoxInstallation
 }; 

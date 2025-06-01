@@ -8,11 +8,16 @@ let tabId = null;
 let stayTimeMs = 3000; // Default stay time in milliseconds
 let waitingTime = 0; // Default waiting time before loading URL
 
-let timerActive = false;
+let timerActive = false; // True if a stay period (after success or error) or navigation timeout handling is active
 
 // Timeout for visiting a URL (20 seconds)
 const NAVIGATION_TIMEOUT = 20000; // ms
 let navigationTimeoutId = null;
+
+// ID for the timeout that runs after a page successfully loads or an error occurs, before navigating to about:blank
+let currentNavigationStayTimeoutId = null;
+// Holder for the specific about:blank onCompleted listener
+let aboutBlankLoadListener = null;
 
 // Connect to the websocket server
 function connectToServer() {
@@ -79,27 +84,90 @@ function sendToServer(message) {
   }
 }
 
+// Helper to cleanup the about:blank listener
+function cleanupAboutBlankListener() {
+    if (aboutBlankLoadListener && browser.webNavigation.onCompleted.hasListener(aboutBlankLoadListener)) {
+        browser.webNavigation.onCompleted.removeListener(aboutBlankLoadListener);
+    }
+    aboutBlankLoadListener = null;
+}
+
+// Function to safely add and manage the about:blank listener
+function listenForAboutBlankAndFinalize(expectedTabId, originContext) {
+    cleanupAboutBlankListener(); // Remove any existing listener first
+
+    aboutBlankLoadListener = (navDetails) => {
+        if (navDetails.frameId === 0 &&
+            navDetails.tabId === expectedTabId &&
+            navDetails.url === 'about:blank') {
+            
+            cleanupAboutBlankListener(); // Remove self
+
+            console.log(`about:blank loaded for tab ${expectedTabId} (context: ${originContext}), sending BROWSER_FINISHED.`);
+            sendToServer({ type: 'BROWSER_FINISHED' });
+        }
+    };
+    browser.webNavigation.onCompleted.addListener(aboutBlankLoadListener);
+}
+
+// Central function to finalize a navigation cycle (success or error)
+function finalizeCycle(urlForDone, errorInfo) {
+    console.log(`Finalizing cycle for ${urlForDone}. Error: ${errorInfo ? errorInfo.message : 'No'}`);
+    // timerActive is reset by the caller (onCompleted/handleNavigationError's setTimeout) before this is called
+    // or just before navigating to about:blank if not already done.
+    timerActive = false; 
+
+    // Send URL_DONE signal
+    const urlDoneMessage = { type: 'URL_DONE', url: urlForDone };
+    if (errorInfo && errorInfo.isError) {
+        urlDoneMessage.error = true;
+        urlDoneMessage.errorMessage = errorInfo.message;
+    }
+    sendToServer(urlDoneMessage);
+
+    // Then navigate to about:blank
+    browser.tabs.update(tabId, { url: 'about:blank' })
+        .then(() => {
+            const context = errorInfo && errorInfo.isError ? `${urlForDone} (after error: ${errorInfo.message})` : urlForDone;
+            listenForAboutBlankAndFinalize(tabId, context);
+        })
+        .catch(error => {
+            console.error(`Error navigating to about:blank during finalizeCycle for ${urlForDone}:`, error);
+            cleanupAboutBlankListener(); // Ensure listener is cleaned up
+            sendToServer({ type: 'BROWSER_FINISHED' }); // Still send BROWSER_FINISHED
+        });
+}
+
 // Load URL in a tab
 function visitUrl(url, stayTime = 3) {
   console.log(`Loading URL: ${url} with stay time: ${stayTime}s`);
   currentUrl = url;
   stayTimeMs = stayTime * 1000;
   
-  // Reset timer state
-  timerActive = false;
+  // Clear any pending stay timeout from a previous navigation cycle
+  if (currentNavigationStayTimeoutId) {
+    clearTimeout(currentNavigationStayTimeoutId);
+    currentNavigationStayTimeoutId = null;
+  }
   
-  // Clear any existing navigation timeout
+  // Remove any lingering about:blank listener from a previous cycle
+  cleanupAboutBlankListener();
+
+  timerActive = false; // Reset timer state for the new navigation attempt. Crucial.
+  
+  // Clear any existing navigation timeout for the overall page load
   if (navigationTimeoutId) {
     clearTimeout(navigationTimeoutId);
     navigationTimeoutId = null;
   }
   
-  // Set navigation timeout - if page doesn't load within timeout, treat as error
+  // Set navigation timeout - if page doesn't load or error out within timeout, treat as error
   navigationTimeoutId = setTimeout(() => {
-    if (!timerActive) {
-      console.error(`Navigation timeout for URL: ${url}`);
-      handleNavigationError(url, 'Navigation timeout');
+    if (timerActive) { 
+      return;
     }
+    console.error(`Navigation timeout for URL: ${currentUrl} (timerActive was false at timeout)`);
+    handleNavigationError(currentUrl, 'Navigation timeout');
   }, NAVIGATION_TIMEOUT);
   
   // Find existing tabs
@@ -127,64 +195,30 @@ function visitUrl(url, stayTime = 3) {
 function handleNavigationError(url, errorMessage) {
   console.error(`Navigation error for ${url}: ${errorMessage}`);
   
-  // Clear navigation timeout
   if (navigationTimeoutId) {
     clearTimeout(navigationTimeoutId);
     navigationTimeoutId = null;
   }
   
-  // Mark timer as active to prevent duplicate handling
-  timerActive = true;
+  if (currentNavigationStayTimeoutId) {
+    clearTimeout(currentNavigationStayTimeoutId);
+    currentNavigationStayTimeoutId = null;
+  }
   
-  // Report error back to server
+  timerActive = true; 
+  
   sendToServer({
     type: 'navigation_error',
-    url: url,
+    url: url, 
     error: errorMessage
   });
   
-  // Wait for stayTime even with errors, then proceed
-  console.log(`Navigation error occurred, but waiting ${stayTimeMs}ms (stayTime) before proceeding`);
-  setTimeout(() => {
-    console.log(`Stay time completed (${stayTimeMs}ms) after navigation error, navigating to about:blank`);
-    timerActive = false;
-    
-    // Send URL_DONE with error flag after stayTime
-    sendToServer({
-      type: 'URL_DONE',
-      url: url,
-      error: true,
-      errorMessage: errorMessage
-    });
-
-    // Then navigate to about:blank
-    browser.tabs.update(tabId, { url: 'about:blank' })
-      .then(() => {
-        // Monitor for about:blank completion and send BROWSER_FINISHED only when it's loaded
-        const aboutBlankHandler = (navDetails) => {
-          if (navDetails.frameId === 0 && 
-              navDetails.tabId === tabId && 
-              navDetails.url === 'about:blank') {
-            // Remove this event listener
-            browser.webNavigation.onCompleted.removeListener(aboutBlankHandler);
-            
-            // Send BROWSER_FINISHED after about:blank has loaded
-            sendToServer({
-              type: 'BROWSER_FINISHED'
-            });
-          }
-        };
-        
-        // Add special event listener for about:blank loading
-        browser.webNavigation.onCompleted.addListener(aboutBlankHandler);
-      })
-      .catch(error => {
-        console.error('Error navigating to about:blank after error:', error);
-        // Send BROWSER_FINISHED even if there was an error
-        sendToServer({
-          type: 'BROWSER_FINISHED'
-        });
-      });
+  console.log(`Navigation error occurred for ${url}, but waiting ${stayTimeMs}ms (stayTime) before proceeding`);
+  
+  currentNavigationStayTimeoutId = setTimeout(() => {
+    timerActive = false; // Explicitly reset before finalizeCycle
+    currentNavigationStayTimeoutId = null;
+    finalizeCycle(url, { isError: true, message: errorMessage });
   }, stayTimeMs);
 }
 
@@ -221,68 +255,55 @@ function resetBrowser() {
 
 // Monitor tab navigation to notify server when a page has loaded
 browser.webNavigation.onCompleted.addListener(details => {
-  // Only consider main frame events for the correct tab and only if no timer is active
-  // Exclude about:blank URLs from triggering the main handler
-  if (details.frameId === 0 && details.tabId === tabId && !timerActive && details.url !== 'about:blank') {
-    console.log(`Page loaded: ${details.url}`);
+  if (details.frameId === 0 && details.tabId === tabId) {
+
+    if (timerActive) {
+      return;
+    }
+
+    if (details.url === 'about:blank') {
+      // This is handled by listenForAboutBlankAndFinalize, called from finalizeCycle
+      return;
+    }
     
-    // Clear navigation timeout since page loaded successfully
+    console.log(`Page loaded: ${details.url} (current target was: ${currentUrl})`);
+    
     if (navigationTimeoutId) {
       clearTimeout(navigationTimeoutId);
       navigationTimeoutId = null;
     }
     
-    // Markiere, dass ein Timer aktiv ist
     timerActive = true;
     
-    // After stayTime, navigate to about:blank and send BROWSER_FINISHED
-    setTimeout(() => {
-      console.log(`Stay time completed (${stayTimeMs}ms), navigating to about:blank`);
-      timerActive = false;
-      
-      // Send URL_DONE signal first
-      sendToServer({
-        type: 'URL_DONE',
-        url: details.url
-      });
+    if (currentNavigationStayTimeoutId) clearTimeout(currentNavigationStayTimeoutId);
 
-      // Then navigate to about:blank
-      browser.tabs.update(tabId, { url: 'about:blank' })
-        .then(() => {
-          // Monitor for about:blank completion and send BROWSER_FINISHED only when it's loaded
-          const aboutBlankHandler = (navDetails) => {
-            if (navDetails.frameId === 0 && 
-                navDetails.tabId === tabId && 
-                navDetails.url === 'about:blank') {
-              // Remove this event listener
-              browser.webNavigation.onCompleted.removeListener(aboutBlankHandler);
-              
-              // Send BROWSER_FINISHED after about:blank has loaded
-              sendToServer({
-                type: 'BROWSER_FINISHED'
-              });
-            }
-          };
-          
-          // Add special event listener for about:blank loading
-          browser.webNavigation.onCompleted.addListener(aboutBlankHandler);
-        })
-        .catch(error => {
-          console.error('Error navigating to about:blank:', error);
-          // Send BROWSER_FINISHED even if there was an error
-          sendToServer({
-            type: 'BROWSER_FINISHED'
-          });
-        });
+    currentNavigationStayTimeoutId = setTimeout(() => {
+      timerActive = false; // Explicitly reset before finalizeCycle
+      currentNavigationStayTimeoutId = null;
+      finalizeCycle(details.url, null); // null for errorInfo means success
     }, stayTimeMs);
   }
 });
 
 // Handle navigation errors (DNS errors, connection refused, etc.)
 browser.webNavigation.onErrorOccurred.addListener(details => {
-  if (details.frameId === 0 && details.tabId === tabId && !timerActive) {
-    console.error(`Navigation error occurred: ${details.error} for URL: ${details.url}`);
-    handleNavigationError(details.url, details.error);
+  // Only consider main frame events for the correct tab.
+  if (details.frameId === 0 && details.tabId === tabId) {
+    
+    // If timerActive is true, it means another handler (success or error stay period)
+    // for this navigation attempt is already active. Ignore this subsequent error.
+    if (timerActive) {
+      // console.log(`onErrorOccurred for ${details.url} on tab ${details.tabId} ignored as timerActive is true.`);
+      return;
+    }
+    
+    // details.url is the URL that encountered the error.
+    // currentUrl is the URL we initially tried to navigate to.
+    console.error(`Navigation error occurred: ${details.error} for URL: ${details.url} (current target was: ${currentUrl})`);
+    
+    // Call handleNavigationError with currentUrl, as that's the primary URL of this attempt.
+    // The specific erroring URL (details.url) is included in the message.
+    handleNavigationError(currentUrl, details.error + ` (occurred at ${details.url})`);
   }
 });
 

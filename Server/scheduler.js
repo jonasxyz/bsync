@@ -320,14 +320,27 @@ io.on("connection", socket => {
     })
 
     // Triggered everytime one browser finished while crawling
-    socket.on("ITERATION_DONE", async (data) => { 
+    socket.on("ITERATION_DONE", async (iterationData) => { 
 
         if (activeClients != config.num_clients || ongoingCrawl == false ) return;  //|| awaiting != "browserfinished"
         // removed || browsersReady != config.num_clients // vmedit 17:21 23-07-24 auch 21:38 25-07-24
 
         pendingJobs -= 1;
 
-        let arrayPosition = helperFunctions.searchArray(calibrationDone ? arrayStatistics : arrayClients, socket.data.clientname.toString(), 1);;
+        // Extract data from iterationData
+        const { harPath, urlVisitError, processingError } = iterationData || {}; // Default to empty object if undefined
+        const clientName = socket.data.clientname.toString();
+        const currentUrlForLog = currentJobData.clearUrl ? currentJobData.clearUrl.toString() : "N/A";
+        const currentUrlIndexForLog = urlsDone + 1; // 1-based index for logging
+
+        if (urlVisitError) {
+            console.log("\x1b[31mERROR: " + ` Client ${clientName} reported a URL visit error for ${currentUrlForLog}`);
+        }
+        if (processingError) {
+            console.log("\x1b[31mERROR: " + ` Client ${clientName} reported a HAR processing error for ${currentUrlForLog}: ${processingError}`);
+        }
+
+        let arrayPosition = helperFunctions.searchArray(calibrationDone ? arrayStatistics : arrayClients, clientName, 1);;
 
         calibrationDone ? (tempArray = arrayStatistics, tempIterations = 0) : (tempArray = arrayClients , tempIterations = testsDone);
 
@@ -345,11 +358,22 @@ io.on("connection", socket => {
         // nichtmehr vorkzukommen.
         tempArray[arrayPosition].browserFinishedArray.push((dateBrowserFinsihed - timeUrlSent));
 
-        if(tempDateUrlDone == undefined){
+        if(tempDateUrlDone == undefined || urlVisitError || processingError){ // Adjusted condition
 
-            let MissingUrlCrawled = true;
-            tempDateUrlDone = -1;
-            console.log("\x1b[31mERROR: " + socket.data.clientname.toString() + " error visiting URL....", "\x1b[0m");
+            // let MissingUrlCrawled = true; // This seems to be a remnant, URL_DONE is separate
+            if (tempDateUrlDone === undefined) tempDateUrlDone = -1; // Keep -1 if no explicit URL_DONE time
+            
+            // Log error in statistics array if applicable
+            if (calibrationDone && arrayPosition !== -1 && tempArray[arrayPosition]) {
+                let errorToLog = "URL_DONE missing";
+                if (urlVisitError) errorToLog = "URL Visit Error";
+                if (processingError) errorToLog += (urlVisitError ? " & " : "") + "HAR Processing Error: " + processingError;
+                
+                if (!tempArray[arrayPosition].errorArray) tempArray[arrayPosition].errorArray = [];
+                tempArray[arrayPosition].errorArray.push(errorToLog);
+            }
+
+            console.log("\x1b[31mERROR: " + clientName + " error visiting/processing URL "+ currentUrlForLog + ". urlVisitError: " + urlVisitError + ", processingError: " + processingError + ", URL_DONE signal missing: " + (tempDateUrlDone === -1 && !urlVisitError && !processingError) );
 
             // console.log("neue funktion timeout urldone fehlt");
             // browserDoneTimeout(true);   // VMEDIT dont kill all browsers if that happens

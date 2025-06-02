@@ -137,14 +137,15 @@ socket.on("start_capturer", async (jobData) => {
   
   const clearUrl = typeof jobData === 'object' && jobData !== null && jobData.clearUrl !== undefined ? jobData.clearUrl : jobData;
   const urlIndex = typeof jobData === 'object' && jobData !== null ? jobData.urlIndex : undefined; // Will be 1-based
+  console.log("urlIndex: " + urlIndex);
 
   if (worker.enable_proxy && baseConfig.persistent_proxy == true){
     console.log(colorize("STATUS:", "green") + " Starting persistent proxy");
     await spawnedScripts.spawnProxy(clearUrl);
     
-    if (clearUrl) {
-        await spawnedScripts.setHarDumpPath(clearUrl);
-    }
+    // if (clearUrl) {
+    //     await spawnedScripts.setHarDumpPath(clearUrl, urlIndex);
+    // }
   }
 
   if (worker.enable_tcpdump) {
@@ -172,7 +173,7 @@ socket.on("CHECK_READY", async (jobData) => {
   if (worker.enable_proxy && baseConfig.persistent_proxy == false){
     console.log(colorize("STATUS:", "green") + " Starting non-persistent proxy for URL:" + clearUrl);
     await spawnedScripts.spawnProxy(clearUrl);
-    await spawnedScripts.setHarDumpPath(clearUrl);
+    //await spawnedScripts.setHarDumpPath(clearUrl);
   }
 
   if (worker.enable_tcpdump) await spawnedScripts.spawnDump(clearUrl);
@@ -266,6 +267,22 @@ socket.on("waitingtime", data => {
 
   waitingTime = data;
   console.log(colorize("INFO:", "gray") + " Calibration done: Waiting " +waitingTime +" ms before each website visit.");
+});
+
+// Listen for script-internal events from spawnScripts.js
+process.on('scriptIterationDone', (iterationData) => {
+  console.log(colorize("SOCKETIO:", "cyan") + " Sending ITERATION_DONE to scheduler with data: ", iterationData);
+  socket.emit("ITERATION_DONE", iterationData);
+});
+
+process.on('scriptUrlDoneRelay', () => {
+  console.log(colorize("SOCKETIO:", "cyan") + " Relaying URL_DONE to scheduler");
+  socket.emit("URL_DONE");
+});
+
+process.on('scriptBrowserReadyRelay', (clientName) => {
+  console.log(colorize("SOCKETIO:", "cyan") + " Relaying browser_ready to scheduler for client: ", clientName);
+  socket.emit("browser_ready", clientName);
 });
 
 // Export totalUrlsForFormatting for other modules if needed (alternative to passing it through every function)

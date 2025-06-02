@@ -36,6 +36,7 @@ var harPathGlobal = null; // Stores the full local path to the HAR file
 
 var browserFinished = false;
 var proxyClosedPromise = null;
+let urlVisitErrorOccurred = false; // Added to track URL visit errors
 
 module.exports =
 {
@@ -153,30 +154,45 @@ module.exports =
             for (const line of lines) {
                 if (line.trim()) { // Leere Zeilen überspringen
                     console.log(colorize("BROWSER: ", "yellow") + line);
+
+                    if (line.includes("URL_ERROR")) {
+                        urlVisitErrorOccurred = true;
+                        // URL_DONE will likely follow or might not, depending on script logic
+                        // We primarily rely on BROWSER_FINISHED to proceed with HAR handling
+                    }
                 }
             }
 
             if (data.toString().includes("BROWSER_FINISHED")) {  // TODO im not waiting for browser finished, espiavvaly for openwpm important
                 browserFinished = true;
+                let processingError = null;
+                let finalHarPath = null;
 
                 console.log(colorize("BROWSER: ", "yellow") + "Browser finished, waiting for HAR file processing");
 
                 // Start HAR file processing and wait for completion then send ITERATION_DONE
                 try {
-                    await this.handleHarFile();
+                    finalHarPath = await this.handleHarFile(); // Get the final HAR path
                     console.log(colorize("STATUS:", "green") + " HAR file processing completed");
                     
-                    console.log(colorize("SOCKETIO:", "cyan") + " Sending ITERATION_DONE");
-                    await socket.emit("ITERATION_DONE");
-                    console.log("\n---------------------------------------------------\n");
+                    // console.log(colorize("SOCKETIO:", "cyan") + " Sending ITERATION_DONE"); // Old direct emit
+                    // await socket.emit("ITERATION_DONE"); // Old direct emit
                 } catch (error) {
                     console.error(colorize("ERROR: ", "red") + "Error processing HAR file:", error);
-
-                    // TODO check what to do when raising an error
-                    // Send ITERATION_DONE despite error
-                    console.log(colorize("SOCKETIO:", "cyan") + " Sending ITERATION_DONE despite error");
-                    await socket.emit("ITERATION_DONE");
+                    processingError = error.message ? error.message : "Unknown HAR processing error";
+                    // Send ITERATION_DONE despite error, with error information
+                    // console.log(colorize("SOCKETIO:", "cyan") + " Sending ITERATION_DONE despite error"); // Old direct emit
+                    // await socket.emit("ITERATION_DONE"); // Old direct emit
                 }
+
+                const iterationData = {
+                    harPath: finalHarPath, // This will be null if handleHarFile failed before path determination
+                    urlVisitError: urlVisitErrorOccurred,
+                    processingError: processingError
+                };
+                process.emit('scriptIterationDone', iterationData);
+                console.log(colorize("INFO:", "gray") + " Emitted scriptIterationDone event with data: ", iterationData);
+                console.log("\n---------------------------------------------------\n");
 
 
                 // socket.emit("ITERATION_DONE"); 19.11
@@ -216,8 +232,9 @@ module.exports =
             }
             if (data.toString().includes("browser_ready")) {
 
-                socket.emit("browser_ready", worker.client_name);
-                console.log(colorize("SOCKETIO:", "cyan") + " Sending browser_ready");
+                // socket.emit("browser_ready", worker.client_name); // Old direct emit
+                process.emit('scriptBrowserReadyRelay', worker.client_name);
+                console.log(colorize("SOCKETIO:", "cyan") + " Sending browser_ready (via process event)");
                 //console.log("Browser ready for visiting URL");
 
                 // debug: Check har flows
@@ -229,8 +246,9 @@ module.exports =
                 const elapsedSeconds = (new Date(timestampRequestToDone) - timestampFirstRequest) / 1000;
                 console.log(colorize("TIMESTAMP:", "cyan") + " Timestamp of URL_DONE: " + timestampRequestToDone);
                 console.log(colorize("TIMESTAMP:", "cyan") + " Elapsed time since first request: " + elapsedSeconds.toFixed(2) + " seconds");
-                socket.emit("URL_DONE");
-                console.log(colorize("SOCKETIO:", "cyan") + " Sending URL_DONE");     
+                // socket.emit("URL_DONE"); // Old direct emit
+                process.emit('scriptUrlDoneRelay');
+                console.log(colorize("SOCKETIO:", "cyan") + " Sending URL_DONE (via process event)");     
 
                 // await this.setHarDumpPath(visitedUrl);
                 
@@ -374,6 +392,7 @@ module.exports =
         visitedUrlIndex = IterationConfig.urlIndex; // Store the URL index (1-based)
         totalUrls = IterationConfig.totalUrls; // Store total URLs for formatting
         timestampFirstRequest = new Date(); // Record time for duration calculation
+        urlVisitErrorOccurred = false; // Reset error flag for new URL
         if (browser && browser.stdin) {
             let jsonSignal = "visit_url" + JSON.stringify(IterationConfig) + "\n";
             browser.stdin.write(jsonSignal);
@@ -728,25 +747,29 @@ module.exports =
         });
       
     },
-    setHarDumpPath: async function (clearUrl) {
+    setHarDumpPath: async function (clearUrl, urlIndex) {
         if (!proxy || !proxy.pid) {
             console.error(colorize("ERROR:", "red") + " Proxy is not running. Cannot set HAR dump path.");
-            return null; // Or reject Promise
+            return null;
         }
         if (!clearUrl) {
             console.log(colorize("ERROR:", "red") + " No URL provided for HAR dump path");
-            return null; // Or reject Promise
+            return null;
         }
-        if (visitedUrlIndex === undefined) {
-            console.error(colorize("ERROR:", "red") + " visitedUrlIndex is not set. Cannot create HAR path.");
-            return null; // Or reject
+        if (urlIndex === undefined) {
+            console.error(colorize("ERROR:", "red") + " urlIndex is not set in setHarDumpPath. Cannot create HAR path.");
+            return null;
         }
-        // Local HAR directory: [Haupt-Crawl-Ordner]/urls/[urlIndex]_[sanitized_url]/
-        const localUrlHarDir = await fileSystemUtils.createUrlDir(clearUrl, visitedUrlIndex, totalUrls); 
-        const harFileName = `${fileSystemUtils.formatUrlIndex(visitedUrlIndex, totalUrls)}_${fileSystemUtils.replaceDotWithUnderscore(clearUrl)}.har`;
+        
+        const localUrlHarDir = await fileSystemUtils.createUrlDir(clearUrl, urlIndex, totalUrls); 
+        if (!localUrlHarDir) {
+            console.error(colorize("ERROR:", "red") + " Failed to create local URL HAR directory (localUrlHarDir is falsy). Cannot set HAR dump path.");
+            return null;
+        }
+        const harFileName = `${fileSystemUtils.formatUrlIndex(urlIndex, totalUrls)}_${fileSystemUtils.replaceDotWithUnderscore(clearUrl)}.har`;
         const localHarPath = path.join(localUrlHarDir, harFileName);
 
-        console.log(colorize("STATUS:", "green") + " Setting hardump path");
+        console.log(colorize("STATUS:", "green") + " Setting hardump path to: " + localHarPath);
 
         return new Promise((resolve, reject) => {
 
@@ -757,38 +780,44 @@ module.exports =
                 for (const line of lines) {
                     if (line.trim() === '') continue;
                     
-                    // Check for new JSON IPC messages
                     if (line.startsWith("IPC_JSON:")) {
                         const jsonString = line.substring(9);
                         try {
                             const message = JSON.parse(jsonString);
                             if (message.type === "har_path_set") {
-                                console.log(colorize("MITMPROXY:", "magenta") + " HAR path set");
+                                console.log(colorize("DEBUG:", "cyan") + ` [setHarDumpPath listener] Resolving with localHarPath: ${localHarPath}`);
+                                console.log(colorize("MITMPROXY:", "magenta") + " HAR path set by proxy confirmation received for: " + localHarPath);
                                 proxy.stdout.removeListener('data', listener);
-                                resolve();
+                                harPathGlobal = localHarPath;
+                                clearTimeout(proxySetHarDumpPathTimeoutId);
+                                resolve(localHarPath);
                                 return;
                             }
                         } catch (error) {
                             // Ignore JSON parse errors in listener
                         }
                     }
-                    // Handle legacy IPC messages
+                    // legacy
                     else if (line.includes("IPC_HAR_PATH_SET")) {
-                        console.log(colorize("MITMPROXY:", "magenta") + " HAR path set (legacy)");
+                        console.log(colorize("DEBUG:", "cyan") + ` [setHarDumpPath listener legacy] Resolving with localHarPath: ${localHarPath}`);
+                        console.log(colorize("MITMPROXY:", "magenta") + " HAR path set (legacy) by proxy confirmation received for: " + localHarPath);
                         proxy.stdout.removeListener('data', listener);
-                        resolve();
+                        harPathGlobal = localHarPath;
+                        clearTimeout(proxySetHarDumpPathTimeoutId);
+                        resolve(localHarPath);
                         return;
                     }
                 }
             };
             
-            // Add temporary listener
             proxy.stdout.on('data', listener);
 
-            const harPath = localHarPath;
-            harPathGlobal = harPath;
+            var proxySetHarDumpPathTimeoutId = setTimeout(() => {
+                proxy.stdout.removeListener('data', listener);
+                console.error(colorize("ERROR:", "red") + ` Timeout waiting for HAR path set confirmation from proxy for: ${localHarPath}`);
+                reject(new Error('Timeout waiting for HAR path set confirmation'));
+            }, 3000);
 
-            // Send harpath request to proxy per http request with X-Har-Path header
             axios.get('http://hardumppath.proxy.local/', {
                 proxy: {
                     host: worker.proxy_host,
@@ -796,34 +825,43 @@ module.exports =
                     protocol: 'http'
                 },
                 headers: {
-                    'X-Har-Path': harPath
+                    'X-Har-Path': localHarPath
                 }
             }).catch(err => {
                 // console.log("Failed to send harpath request:",); //err); DEBUG
             });
 
-            // Add timeout
-            setTimeout(() => {
-                proxy.stdout.removeListener('data', listener); // Clean up listener
-                reject(new Error('Timeout waiting for HAR path set confirmation'));
-            }, 15000);
+
 
         });
-        return harPath;
-
-
     },
 
     handleHarFile: async function () {
         console.log(colorize("INFO:", "gray") + " Handling HAR file for URL:", visitedUrl);
 
-        await this.setHarDumpPath(visitedUrl);
-        await exportHar();
-        await waitForHarFile(harPathGlobal);
+        const localHarPathFromAwait = await this.setHarDumpPath(visitedUrl, visitedUrlIndex);
+        // console.log(colorize("DEBUG:", "cyan") + ` [handleHarFile] Value received from setHarDumpPath: ${localHarPathFromAwait}`);
+
+        if (!localHarPathFromAwait) {
+            throw new Error("Failed to set HAR dump path, harPath variable is empty.");
+        }
+        // Use localHarPathFromAwait instead of relying on harPathGlobal directly here for exportHar and waitForHarFile inputs if they need it.
+        // However, exportHar and waitForHarFile(harPathGlobal) use harPathGlobal which is set inside setHarDumpPath's listener.
+        // This is okay if setHarDumpPath resolves correctly.
+
+        await exportHar(); // exportHar uses harPathGlobal implicitly via proxyController
+        await waitForHarFile(harPathGlobal); // waitForHarFile explicitly uses harPathGlobal
 
         if (baseConfig.nfs_remote_filestorage) {
-            await saveHarToNfs(visitedUrl);
+            try {
+                const nfsPath = await saveHarToNfs(visitedUrl);
+                return nfsPath;
+            } catch (nfsError) {
+                console.error(colorize("ERROR:", "red") + " Failed to save HAR to NFS, returning local path as fallback.", nfsError);
+                return harPathGlobal; 
+            }
         }
+        return harPathGlobal; 
     },
 
     // Clear HAR flows // todo wurd noch nicht benutzt
@@ -904,17 +942,20 @@ async function saveHarToNfs(clearUrlForNfs) {
     return new Promise(async (resolve, reject) => {
         try {
             if (visitedUrlIndex === undefined) {
-                console.error(colorize("ERROR:", "red") + " visitedUrlIndex not set. Cannot save HAR to NFS.");
-                return reject(new Error("visitedUrlIndex not set for NFS HAR export."));
+                const errMsg = "visitedUrlIndex not set. Cannot save HAR to NFS.";
+                console.error(colorize("ERROR:", "red") + errMsg);
+                return reject(new Error(errMsg));
             }
             if (totalUrls === undefined || totalUrls === 0) {
-                console.error(colorize("ERROR:", "red") + " totalUrls not set. Cannot save HAR to NFS with proper formatting.");
+                const errMsg = "totalUrls not set. Cannot save HAR to NFS with proper formatting.";
+                console.error(colorize("ERROR:", "red") + errMsg);
                 // Optionally, proceed with a default formatting or reject
-                return reject(new Error("totalUrls not set for NFS HAR export formatting."));
+                return reject(new Error(errMsg));
             }
             if (!harPathGlobal || !fs.existsSync(harPathGlobal)) {
-                console.error(colorize("ERROR:", "red") + ` Local HAR file for NFS export not found: ${harPathGlobal}`);
-                return reject(new Error("Local HAR file not found for NFS export."));
+                const errMsg = `Local HAR file for NFS export not found: ${harPathGlobal}`;
+                console.error(colorize("ERROR:", "red") + errMsg);
+                return reject(new Error(errMsg));
             }
             console.log(colorize("STATUS:", "green") + ` Starting HAR to NFS server export for: ${fileSystemUtils.formatUrlIndex(visitedUrlIndex, totalUrls)}_${clearUrlForNfs}`);
             
@@ -935,7 +976,7 @@ async function saveHarToNfs(clearUrlForNfs) {
                 console.log(colorize("STATUS:", "green") + ` Local HAR file deleted: `, harPathGlobal);
             }
 
-            resolve(colorize("STATUS:", "green") + ` HAR file successfully saved to ${remoteNfsHarPath}`);
+            resolve(remoteNfsHarPath); // Resolve with the NFS path
 
         } catch (error) {
             console.error(colorize("ERROR:", "red") + " Error while saving HAR to NFS:", error);

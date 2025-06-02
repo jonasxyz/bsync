@@ -90,15 +90,25 @@ async function visitUrl(url, waitingtime = 0, stayTime = 3, restart = false) {
         await new Promise(resolve => setTimeout(resolve, waitingtime));
     }
 
+    let visitError = false;
     console.log(`Visiting ${url}`);
-    await page.goto(url, { waitUntil: 'networkidle2' }).catch(e => console.error("Error visiting URL: ", e)); // https://github.com/puppeteer/puppeteer/issues/4291
-    console.log(`Staying on page for ${stayTime} seconds`);
+    await page.goto(url, { waitUntil: 'networkidle2' })
+        .catch(e => {
+            console.error("Error visiting URL: ", e);
+            visitError = true;
+        });
 
-    // Stay on site for stayTime
-    await new Promise(resolve => setTimeout(resolve, stayTime * 1000));
-    
-    // Signalisiere, dass die URL-Verarbeitung abgeschlossen ist
-    process.stdout.write("URL_DONE");
+    if (visitError) {
+        process.stdout.write("URL_ERROR\n");
+    } else {
+        console.log(`Staying on page for ${stayTime} seconds`);
+
+        // Stay on site for stayTime
+        await new Promise(resolve => setTimeout(resolve, stayTime * 1000));
+        
+        // Signalisiere, dass die URL-Verarbeitung abgeschlossen ist
+        process.stdout.write("URL_DONE\n");
+    }
 
     if (restart) { // Korrigiert von 'reset' zu 'restart' basierend auf dem Funktionsparameter
         console.log("Restarting browser with profile reset");
@@ -199,9 +209,9 @@ async function resetBrowser() {
             if (url) {
                 //console.log("useragent cor aiwati: ", useragent); // DEBUG
                 await visitUrl(url, waitingtime, stayTime, restart).then(() => {
-                    console.log("Finished visiting URL");
+                    console.log("Finished visiting URL (visitUrl promise resolved)");
 
-                    process.stdout.write("BROWSER_FINISHED");
+                    process.stdout.write("BROWSER_FINISHED\n");
                 });
     
             } else {

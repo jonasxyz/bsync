@@ -594,6 +594,10 @@ io.on("connection", socket => {
         }
     })
 
+    socket.on("CLIENT_PROXY_INITIALIZED", (workerName)=> {   
+        console.log("CLIENT_PROXY_INITIALIZED triggered from client: " + workerName);
+    })
+
     function initiate_crawler(start_capturer = true){
         io.sockets.emit("initiate_crawler");
         logMessage("status", "Starting crawlers");

@@ -17,7 +17,7 @@ const config = module.exports = {
     test_iterations : 100,           // set number of test runs
 
     central_datastorage : false,       // set true to store uploaded har data on the master server
-    storage_path : "C:\\Users\\OLED\\Downloads\\bsyncData", // set path to store the crawl logs and uploaded har data
+    storage_path : "/home/user/Downloads/Crawl-Data", // set path to store the crawl logs and uploaded har data
     //storage_path : "/nfs/bsync-Data/", // seems to work
 
     remote_storage_nfs : true,        // set true to store crawl logging on the NFS server

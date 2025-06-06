@@ -146,6 +146,8 @@ socket.on("start_capturer", async (jobData) => {
     // if (clearUrl) {
     //     await spawnedScripts.setHarDumpPath(clearUrl, urlIndex);
     // }
+  }else if (worker.enable_proxy == false) {
+    console.log(colorize("STATUS:", "green") + " Skipping proxy start, proxy disabled");
   }
 
   if (worker.enable_tcpdump) {
@@ -283,6 +285,13 @@ process.on('scriptUrlDoneRelay', () => {
 process.on('scriptBrowserReadyRelay', (clientName) => {
   console.log(colorize("SOCKETIO:", "cyan") + " Relaying browser_ready to scheduler for client: ", clientName);
   socket.emit("browser_ready", clientName);
+});
+
+process.on('proxyInitialized', () => {
+  if (socket && worker && worker.client_name) {
+    console.log(colorize("SOCKETIO:", "cyan") + " Relaying PROXY_INITIALIZED to scheduler for client: ", worker.client_name);
+    socket.emit("CLIENT_PROXY_INITIALIZED", worker.client_name);
+  }
 });
 
 // Export totalUrlsForFormatting for other modules if needed (alternative to passing it through every function)

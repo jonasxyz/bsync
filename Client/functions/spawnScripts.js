@@ -130,7 +130,7 @@ module.exports =
                     shell: true,
                     cwd: worker.script_path,
                     stdio: "pipe",
-                    detached: true
+                    //detached: true // Todo check detached
                 });
                 // console.log("SPAWN-STRING: ","conda run -n openwpm --no-capture-output python -u", spawnArgs) // DEBUG
                 console.log("spawned .py childprocess");
@@ -1109,6 +1109,7 @@ function processProxyIpcMessage(jsonString) {
         switch (type) {
             case "proxy_ready":
                 console.log(colorize("MITMPROXY:", "magenta") + " Proxy successfully started and ready");
+                process.emit('proxyInitialized');
                 break;
 
             case "proxy_loaded":

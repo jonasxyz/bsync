@@ -18,10 +18,15 @@ module.exports ={
 
         }
     },
-    startLogTesting : function (date) {
+    startLogTesting : function (date, storagePath) {
 
-        file = storagePath, "TESTCRAWL_" + date + ".csv";
-        fs.writeFileSync(file, "STATUS, ITERATION, CLIENT, DATE, READY AFTER(MS), WATINGTIME(MS), REQUEST AFTER(MS), DONE AFTER(MS), MAX DELAY(MS)");
+        file = path.join(storagePath, "TESTCRAWL_" + date + ".csv");
+        try {
+            fs.writeFileSync(file, "STATUS, ITERATION, CLIENT, DATE, READY AFTER(MS), WATINGTIME(MS), REQUEST AFTER(MS), DONE AFTER(MS), MAX DELAY(MS)");
+        } catch (error) {
+            console.error("\x1b[31mERROR: " + "Error accessing storage path for writing test log file:", "\x1b[0m");
+            console.error(error);
+        }
     },
     logTesting : function (array, urlsDone) {
 

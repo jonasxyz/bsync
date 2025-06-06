@@ -35,44 +35,6 @@ function createUrlSubdirectory(rootDirPath, tempUrl) {
     });
 }
 
-function createClientUploadRoute(clientId, rootDirPath, tempUrl) {
-    console.log("Creating upload route for client: " + clientId); //debug
-
-    const storage = multer.diskStorage({
-        destination: (req, file, cb) => {
-            createUrlSubdirectory(rootDirPath, tempUrl)
-                .then(dirPath => cb(null, dirPath))
-                .catch(err => cb(err));
-        },
-        filename: (req, file, cb) => {
-            const uploadName = req.get('Client-Name');
-            cb(null, uploadName + '_' + file.originalname);
-        }
-    });
-
-    // Todo HTTP upload not used anymore, check and remove
-    const upload = multer({ storage: storage });
-    app.post(`/upload/${clientId}`, upload.single('file'), (req, res) => {
-        console.log(`INFO: Receiving file upload at /upload/${clientId}`);
-
-        if (!req.file) {
-            console.error('No file uploaded');
-            return res.status(400).send('No file uploaded');
-        }
-
-        const filePath = path.join(req.file.destination, req.file.filename);
-        fs.writeFile(filePath, req.file.buffer, (err) => {
-            if (err) {
-                console.error('File save error:', err);
-                res.status(500).send('File save failed');
-            } else {
-                console.log(`File saved successfully for client ${clientId}`);
-                res.status(200).send('File saved successfully');
-            }
-        });
-    });
-}
-
 function createClientSubpages(clientId, calibrationDone, arrayClients, arrayStatistics, timeUrlSent, timeAllBrowsersReady) { 
     //if (activeClients != config.num_clients) return;
 
@@ -135,7 +97,6 @@ function createClientSubpages(clientId, calibrationDone, arrayClients, arrayStat
 module.exports = {
     app,
     server,
-    createClientUploadRoute,
     createClientSubpages,
     // createServer
 };

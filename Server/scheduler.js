@@ -152,13 +152,6 @@ io.on("connection", socket => {
         // Create individual subpages for each client to track their access timing on the scheduler webserver in calibration and test runs
         serverFunctions.createClientSubpages(socket.id, calibrationDone, arrayClients, arrayStatistics, timeUrlSent, timeAllBrowsersReady);
 
-        if(config.central_datastorage) { 
-            let preTempUrl = urlList[urlsDone].toString();
-            currentJobData.clearUrl = preTempUrl.slice(preTempUrl.indexOf(",") + 1);
-            currentJobData.urlIndex = urlsDone + 1; // 1-based index for worker
-
-            serverFunctions.createClientUploadRoute(socket.id, rootDirPath, currentJobData.clearUrl);
-        }
 
         // Storing connected clients and data for each URL-Iteration while crawling 
         arrayClients.push({ 

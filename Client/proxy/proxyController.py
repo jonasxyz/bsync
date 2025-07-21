@@ -60,42 +60,61 @@ class SaveHarCustom:
         self.request_count = 0
         self.iteration_active = False
 
-    # meins
-        self.save_path = "/home/user/Downloads/testhttpdump.har"
-        # Dynamisch ctx.options.hardump überschreiben
-        ctx.options.hardump = self.save_path
+        # Internal state for managing the HAR save path, independent of mitmproxy's options.
+        self.save_path = ""
 
     @command.command("save.har")
-    def export_har(self, flows: Sequence[flow.Flow], path: types.Path) -> None:
-        """Export flows to an HAR (HTTP Archive) file."""
-        send_ipc_message("har_export_started", {"flows_count": len(flows)})
+    def export_har(self) -> None:
+        """
+        Export flows to an HAR file.
+        This copies the current flows and clears the internal list *immediately*
+        to prevent data from one iteration leaking into the next.
+        The export then proceeds on the copy.
+        """
+        # We operate on a copy of self.flows.
+        flows_to_export = list(self.flows)
+        flows_before_clear = len(flows_to_export)
 
-        har = json.dumps(self.make_har(flows), indent=4).encode()
-
-        if PROXY_DEBUG: 
-            send_ipc_message("debug", {"message": "IN_HAR_EXPORT_PROCESS"})
-
-        if path.endswith(".zhar"):
-            har = zlib.compress(har, 9)
-
-        with open(path, "wb") as f:
-            f.write(har)
-
-        # Clear flows after export
-        flows_before_clear = len(self.flows)
+        # IMPORTANT: Clear the instance's flow list immediately.
+        # This is the critical step to ensure isolation between crawl iterations.
         self.flows = []
-        
-        send_ipc_message("har_export_completed", {
-            "file_path": path,
-            "file_size": len(har),
-            "flows_before_clear": flows_before_clear,
-            "flows_after_clear": len(self.flows)
-        })
-        
-        # Reset request counter for new iteration
         self.request_count = 0
-        self.iteration_active = True
+        # The iteration is not active until the next request comes in.
+        # It's set to active in the _save_flow method.
+        self.iteration_active = True 
+        
+        send_ipc_message("har_export_started", {
+            "flows_count": flows_before_clear,
+            "save_path": self.save_path,
+            "message": "Flows copied and live list cleared for export."
+        })
 
+        try:
+            har = json.dumps(self.make_har(flows_to_export), indent=4).encode()
+
+            if PROXY_DEBUG: 
+                send_ipc_message("debug", {"message": "IN_HAR_EXPORT_PROCESS"})
+
+            if self.save_path.endswith(".zhar"):
+                har = zlib.compress(har, 9)
+
+            with open(self.save_path, "wb") as f:
+                f.write(har)
+
+            send_ipc_message("har_export_completed", {
+                "file_path": self.save_path,
+                "file_size": len(har),
+                "flows_exported": flows_before_clear,
+                "flows_remaining_in_proxy": len(self.flows) # Should always be 0
+            })
+        except Exception as e:
+            # The flow list is already cleared, but we should log the export error.
+            send_ipc_message("error", {
+                "operation": "har_export",
+                "error_message": str(e),
+                "error_type": type(e).__name__,
+                "failed_flows_count": flows_before_clear
+            })
 
     def request(self, flow: http.HTTPFlow) -> None:
 
@@ -124,14 +143,19 @@ class SaveHarCustom:
         """Handle hardump request via HTTP"""
         if flow.request.pretty_url == "http://harddump.proxy.local/":
             send_ipc_message("hardump_requested", {"flows_count": len(self.flows)})
-
-            try:
-                self.export_har(self.flows, self.save_path)
-            except Exception as e:
-                send_ipc_message("error", {
-                    "operation": "har_export",
-                    "error_message": str(e),
-                    "error_type": type(e).__name__
+            if self.save_path:
+                try:
+                    self.export_har()
+                except Exception as e:
+                    send_ipc_message("error", {
+                        "operation": "har_export_trigger",
+                        "error_message": str(e),
+                        "error_type": type(e).__name__
+                    })
+            else:
+                 send_ipc_message("error", {
+                    "operation": "har_export_trigger",
+                    "error_message": "Cannot dump HAR, save_path is not set."
                 })
 
         """Handle HAR path setting request"""
@@ -140,8 +164,6 @@ class SaveHarCustom:
             har_path = flow.request.headers.get('X-Har-Path', '')
             if har_path:
                 self.save_path = har_path
-                ctx.options.hardump = self.save_path
-
                 send_ipc_message("har_path_set", {"har_path": har_path})
         
         # Clear HAR flows
@@ -213,12 +235,11 @@ class SaveHarCustom:
                 self.filt = None
 
         if "hardump" in updated:
+            # We no longer react to hardump option changes for automatic saving.
+            # This is now fully controlled via HTTP requests.
             if not ctx.options.hardump:
-                flows_before_clear = len(self.flows)
-                self.flows = []
-                send_ipc_message("flows_cleared_config", {
-                    "flows_before_clear": flows_before_clear,
-                    "reason": "hardump_config_updated"
+                send_ipc_message("debug", {
+                    "message": "hardump option cleared, but no action taken (manual control)."
                 })
 
     def response(self, flow: http.HTTPFlow) -> None:
@@ -236,6 +257,22 @@ class SaveHarCustom:
     def _save_flow(self, flow: http.HTTPFlow) -> None:
         # Skip requests to *.proxy.local domains which are used for HTTP control
         if ".proxy.local" in flow.request.pretty_url:
+            return
+            
+        # Filter out Firefox/Mozilla background requests.
+        ignored_hosts = [
+            "detectportal.firefox.com",
+            "firefox.settings.services.mozilla.com",
+            "push.services.mozilla.com",
+            "location.services.mozilla.com",
+            "shavar.services.mozilla.com",
+            "snippets.cdn.mozilla.net",
+            "normandy.cdn.mozilla.net",
+            "aus5.mozilla.org",
+            "content-signature-2.cdn.mozilla.net",
+            "mozilla.cloudflare-dns.com",
+        ]
+        if flow.request.host in ignored_hosts or "cdn.mozilla.net" in flow.request.host:
             return
             
         flow_matches = self.filt is None or self.filt(flow)
@@ -367,6 +404,13 @@ class SaveHarCustom:
             url = f"https://{flow.request.pretty_url}/"
         else:
             url = flow.request.pretty_url
+
+        # If it's a websocket, change the scheme to ws(s) to match OpenWPM
+        if flow.websocket:
+            if url.startswith("https://"):
+                url = "wss://" + url[len("https://"):]
+            elif url.startswith("http://"):
+                url = "ws://" + url[len("http://"):]
 
         entry: dict[str, Any] = {
             "startedDateTime": datetime.fromtimestamp(

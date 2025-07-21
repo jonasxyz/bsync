@@ -8,7 +8,7 @@ const testConfig = {
         port: 3000,
         allowed_ping: 100,
         url_list: "test/verification_test/test_url.txt", // Eine einzelne URL für den Test
-        calibration_runs: 1,
+        calibration_runs: 2,
         re_calibration: 0,
         re_calibration_dc: false,
         timeout_ms: 60000,
@@ -26,7 +26,7 @@ const testConfig = {
             pagevisit_duration: 5,
             nfs_remote_filestorage: false,
             persistent_proxy: true,
-            proxy_debug_output: true,
+            proxy_debug_output: false, // prints all http requests to console
         },
         OpenWPM: {
             client_name: "OpenWPM_Test_Worker",

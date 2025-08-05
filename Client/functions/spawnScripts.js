@@ -7,18 +7,17 @@ const FormData = require('form-data');
 
 const crawlEnvInfo = require("./crawlEnvInfo.js");
 const fileSystemUtils = require("./fileSystemUtils.js"); // Added import for new utility functions
-const { colorize, colors, prettySize, createDir, createUrlDir, createRemoteUrlDir, createBrowserProfileDir, createRemoteProfileDir, replaceDotWithUnderscore, getCrawlDir, getCrawlDirTimestamp, URLS_SUBDIR, PROFILES_SUBDIR, LOGS_SUBDIR, isDirCreated } = fileSystemUtils; // Destructure imported functions
+const { colorize, colors, prettySize, createDir, createUrlDir, createRemoteUrlDir, createBrowserProfileDir, createRemoteProfileDir, replaceDotWithUnderscore, getCrawlDir, getCrawlDirTimestamp, URLS_SUBDIR, PROFILES_SUBDIR, LOGS_SUBDIR, OPENWPM_DATA_SUBDIR, isDirCreated } = fileSystemUtils; // Destructure imported functions
 
 var dataGathered = false;
 
-const config = require("../config.js");
-const worker = config.activeConfig.worker;
-const baseConfig = config.activeConfig.base;
+// Config variables that will be initialized by the init function
+let worker;
+let baseConfig;
+let fileformat;
 
-// Debug option for proxy output - can be configured in config.js
-const PROXY_DEBUG_OUTPUT = baseConfig.proxy_debug_output || false;
-
-const fileformat = path.extname(worker.crawl_script);
+// Debug option for proxy output - will be set in init
+let PROXY_DEBUG_OUTPUT = false;
 
 var childExists = false;
 var isCancelled = false;
@@ -40,11 +39,16 @@ let urlVisitErrorOccurred = false; // Added to track URL visit errors
 
 module.exports =
 {
+    init: function(passedConfig) {
+        worker = passedConfig.activeConfig.worker;
+        baseConfig = passedConfig.activeConfig.base;
+        fileformat = path.extname(worker.crawl_script);
+        PROXY_DEBUG_OUTPUT = baseConfig.proxy_debug_output || false;
+        console.log(colorize("INFO:", "gray") + `spawnScripts initialized for worker: ${worker.client_name}`);
+    },
+
     spawnCrawler: async function () {
 
-        let { url, proxyHost, userAgent, waitingTime, clearUrl, headless } = config;
-
-        
         // TODO Fix tcpdump especially for PoC        
         if(worker.enable_tcpdump){ // additionally setting the enviroment variable for saving sslkeylogfile
 
@@ -123,8 +127,13 @@ module.exports =
                 // console.log("SPAWN-STRING: ",'node', spawnArgs) // DEBUG
             }else if (fileformat === ".py") {
 
-                spawnArgs.push("--crawldatapath", browserProfileDir);
+                const crawlDir = fileSystemUtils.getCrawlDir();
+                const openWpmDataDir = path.join(crawlDir, OPENWPM_DATA_SUBDIR);
+                const openWpmLogFile = path.join(crawlDir, LOGS_SUBDIR, `openwpm_internal_log_${worker.client_name}.log`);
+
+                spawnArgs.push("--crawldatapath", openWpmDataDir);
                 spawnArgs.push("--browserprofilepath", browserProfileDir);
+                spawnArgs.push("--logfilepath", openWpmLogFile);
 
                 browser = spawn("conda run -n openwpm --no-capture-output python -u", spawnArgs, {
                     shell: true,
@@ -387,12 +396,16 @@ module.exports =
         }
     },
 
-    sendVisitUrlCommand: function (IterationConfig) {
+    sendVisitUrlCommand: async function (IterationConfig) {
         visitedUrl = IterationConfig.clearUrl; // Store for handleHarFile and NFS export
         visitedUrlIndex = IterationConfig.urlIndex; // Store the URL index (1-based)
         totalUrls = IterationConfig.totalUrls; // Store total URLs for formatting
         timestampFirstRequest = new Date(); // Record time for duration calculation
         urlVisitErrorOccurred = false; // Reset error flag for new URL
+        
+        // Clear previous flows from proxy before visiting the new URL
+        await this.clearHarFlows();
+        
         if (browser && browser.stdin) {
             let jsonSignal = "visit_url" + JSON.stringify(IterationConfig) + "\n";
             browser.stdin.write(jsonSignal);
@@ -625,7 +638,7 @@ module.exports =
         return new Promise((resolve, reject) => {
 
             // Extract the domain from the master_addr for not proxying requests to the master server
-            let masterDomain = config.activeConfig.base.master_addr.replace(/^https?\:\/\//i, "");
+            let masterDomain = baseConfig.master_addr.replace(/^https?\:\/\//i, "");
 
             console.log(colorize("INFO:", "gray") + " MASTER DOMAIN: ", masterDomain);
 
@@ -637,7 +650,8 @@ module.exports =
                     // Load custom script to save HAR files and control proxy in runtime
                     "-s /home/user/Downloads/bsync/Client/proxy/proxyController.py",
                     "-v",
-                    "--set=console_eventlog_verbosity=info",
+                    //"--set=console_eventlog_verbosity=info", 
+                    "--set=console_eventlog_verbosity=warn", 
                     "--set=termlog_verbosity=warn",
                     //"--set=hardump=" + fileSaveDir + replaceDotWithUnderscore(clearUrl) + ".har" // alt
                     // TODO for bugfixing
@@ -650,8 +664,14 @@ module.exports =
 
                     // oder + ",*." für regex
 
-                    ],
-                {stdio: "pipe", shell: true});
+                    ], {
+                        // stdio: ['ignore', 'ignore', 'pipe'], 
+                        stdio: "pipe", 
+                        shell: true,
+                        env: process.env,  // Umgebungsvariablen weiterleiten
+                        cwd: process.cwd() // Working directory setzen
+                    });
+
                 // console.log("mitmdump", [
                 //     "--listen-host=" + worker.proxy_host,
                 //     "--listen-port=" + worker.proxy_port, 
@@ -864,18 +884,55 @@ module.exports =
         return harPathGlobal; 
     },
 
-    // Clear HAR flows // todo wurd noch nicht benutzt
+    // Clear HAR flows
     clearHarFlows: function () {
-        if (!proxy && !proxy.stdin) return;
-        console.log(colorize("MITMPROXY:", "magenta") + " Sending HTTP clearflows request to proxy");
-        axios.get('http://clearflows.proxy.local/', {
-            proxy: {
-                host: worker.proxy_host,
-                port: worker.proxy_port,
-                protocol: 'http'
+        return new Promise((resolve, reject) => {
+            if (!proxy || !proxy.pid) {
+                console.error(colorize("ERROR:", "red") + " Proxy is not running. Cannot clear flows.");
+                return reject(new Error("Proxy not running"));
             }
-        }).catch(err => { // error but its working
-           // console.log("Failed to send clearflows request:",); //err); DEBUG
+
+            const listener = (data) => {
+                const proxyOutput = data.toString();
+                const lines = proxyOutput.trim().split('\n');
+                
+                for (const line of lines) {
+                    if (line.startsWith("IPC_JSON:")) {
+                        const jsonString = line.substring(9);
+                        try {
+                            const message = JSON.parse(jsonString);
+                            if (message.type === "flows_cleared") {
+                                console.log(colorize("MITMPROXY:", "magenta") + ` Flows cleared confirmation received.`);
+                                proxy.stdout.removeListener('data', listener);
+                                clearTimeout(timeoutId);
+                                resolve();
+                                return;
+                            }
+                        } catch (error) { /* ignore JSON parse errors */ }
+                    }
+                }
+            };
+            
+            proxy.stdout.on('data', listener);
+
+            const timeoutId = setTimeout(() => {
+                proxy.stdout.removeListener('data', listener);
+                const errorMsg = "Timeout waiting for flows_cleared confirmation from proxy.";
+                console.error(colorize("ERROR:", "red") + errorMsg);
+                reject(new Error(errorMsg));
+            }, 3000);
+
+            console.log(colorize("MITMPROXY:", "magenta") + " Sending HTTP clearflows request to proxy");
+            axios.get('http://clearflows.proxy.local/', {
+                proxy: {
+                    host: worker.proxy_host,
+                    port: worker.proxy_port,
+                    protocol: 'http'
+                }
+            }).catch(err => { 
+                // This error is expected as the proxy doesn't send a proper HTTP response,
+                // we are waiting for the IPC message instead.
+            });
         });
     },
     // Get har flows // todo debug maybe remove

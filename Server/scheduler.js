@@ -4,7 +4,14 @@
  * Manages connections to worker clients via Socket.IO and distributes crawling tasks (URLs).
  * Coordinates the crawling process, including worker calibration, URL dispatch, status tracking, and error handling.
  */
-var config = require('./config.js');
+// Load config - support test config path from environment
+var config;
+if (process.env.NODE_CONFIG_PATH) {
+    console.log('Loading test config from:', process.env.NODE_CONFIG_PATH);
+    config = require(process.env.NODE_CONFIG_PATH).serverConfig;
+} else {
+    config = require('./config.js');
+}
 var statFunctions = require('./functions/statFunctions.js');
 var logFunctions = require('./functions/logging.js');
 var helperFunctions = require('./functions/helper.js');
@@ -376,7 +383,7 @@ io.on("connection", socket => {
         if(config.test_run == true || calibrationDone == false) {  // always except normal crawl after calibration
             // todo ? eigentlich nur bei testrun oder calibration
 
-            console.log("\x1b[34mURLDONE:\x1b[0m",  tempArray[arrayPosition].workerName , " URL done signal \x1b[34m",
+            console.log("\x1b[34mITERATION_DONE:\x1b[0m",  tempArray[arrayPosition].workerName , " URL done signal \x1b[34m",
                     ( tempDateUrlDone -  tempArray[arrayPosition].requestArray[tempIterations]) , "ms\x1b[0m after receiving request"
                     + " \x1b[36m" , (tempDateUrlDone - timeUrlSent ) + "\x1b[0m ms after starting iteration. "); //VMEDIT
 
@@ -431,7 +438,7 @@ io.on("connection", socket => {
             console.log("\x1b[33mSTATUS: \x1b[0m" + "Calibration #" + testsDone + " Delay between first and last HTTP Request", "\x1b[33m", + statFunctions.getMaxDelay(arrayClients, testsDone-1) + " ms" , "\x1b[0m");
 
 
-            if (testsDone == config.calibration_runs ) { // Calibration iterations done
+            if (testsDone >= config.calibration_runs ) { // Calibration iterations done
         
                 calibration();
 
@@ -512,8 +519,8 @@ io.on("connection", socket => {
             // Get the next URL and its index
             currentJobData = retrieveUrl();
 
-            io.sockets.emit("CHECK_READY", { clearUrl: currentJobData.clearUrl, urlIndex: urlsDone + 1 });
-            helperFunctions.logMessage("status", "CHECK_READY sent to all workers for URL: " + currentJobData.clearUrl + " (Index: " + (urlsDone + 1) + ")");
+            io.sockets.emit("CHECK_READY", currentJobData);
+            helperFunctions.logMessage("status", "CHECK_READY sent to all workers for URL: " + currentJobData.clearUrl + " (Index: " + (currentJobData.urlIndex) + ")");
 
             console.log("\n--------------------------------------------------------------------------------------------------------------\n")
         }
@@ -612,15 +619,18 @@ io.on("connection", socket => {
     function retrieveUrl(){
         let urlToCrawl;
         let indexForUrl; // This will be the 1-based index for the worker
+        let totalUrlsForContext;
 
         if(calibrationDone == false){ 
            urlToCrawl = "calibration";
            indexForUrl = testsDone + 1; 
+           totalUrlsForContext = config.calibration_runs;
            if(initCalibrationDone==false && testsDone==0) calibrationTime = Date.now();
            pendingRequests += config.num_clients;
            
         }else{
-            indexForUrl = urlsDone + 1; 
+            indexForUrl = urlsDone + 1;
+            totalUrlsForContext = urlList.length;
             if(config.test_run){
                 urlToCrawl =  "test";
                 pendingRequests += config.num_clients; 
@@ -637,7 +647,7 @@ io.on("connection", socket => {
                 }
             }
         }
-        return { clearUrl: urlToCrawl, urlIndex: indexForUrl };
+        return { clearUrl: urlToCrawl, urlIndex: indexForUrl, totalUrls: totalUrlsForContext };
     }
     context.retrieveUrl = retrieveUrl;
 
@@ -675,7 +685,7 @@ io.on("connection", socket => {
         
         // io.sockets.emit("url", tempUrl);  //03 muss zu visit_url werden
         // io.sockets.emit("visit_url", tempUrl); // Old
-        io.sockets.emit("visit_url", { clearUrl: currentJobData.clearUrl, urlIndex: urlsDone + 1 });
+        io.sockets.emit("visit_url", currentJobData);
 
         timeUrlSent = Date.now();
         pendingJobs += config.num_clients;
@@ -957,11 +967,29 @@ async function calibration(){
 
     for (var i = 0; i < arrayClients.length; i++) {
 
+        if (arrayClients[i].doneArray.length == 0) {
+            console.log("CAUTION: doneArray is empty");
+        }
+
+        console.log("requestArray");
+        console.log(arrayClients[i]);
+        console.log("doneArray");
+        console.log(arrayClients[i].doneArray);
         // calculate average time gathered from the calibibration between sending url to receiving the http request
-        arrayClients[i].avgDelay = Math.round(arrayClients[i].requestArray.reduce((a, b) => (a + b)) / arrayClients[i].requestArray.length);
+        if (arrayClients[i].requestArray.length > 0) {
+            arrayClients[i].avgDelay = Math.round(arrayClients[i].requestArray.reduce((a, b) => (a + b)) / arrayClients[i].requestArray.length);
+        } else {
+            console.log("WARNING: requestArray is empty for client", arrayClients[i].workerName);
+            arrayClients[i].avgDelay = 0;
+        }
 
         // calculate average time between sending url and done signal
-        arrayClients[i].avgDone = Math.round(arrayClients[i].doneArray.reduce((a, b) => (a + b)) / arrayClients[i].doneArray.length);
+        if (arrayClients[i].doneArray.length > 0) {
+            arrayClients[i].avgDone = Math.round(arrayClients[i].doneArray.reduce((a, b) => (a + b)) / arrayClients[i].doneArray.length);
+        } else {
+            console.log("WARNING: doneArray is empty for client", arrayClients[i].workerName);
+            arrayClients[i].avgDone = 0;
+        }
 
     }
 

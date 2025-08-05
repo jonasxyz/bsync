@@ -12,19 +12,29 @@ var spawnedScripts = require("./functions/spawnScripts.js");
 var fileSystemUtils = require("./functions/fileSystemUtils.js");
 const { setupWorkerConsoleAndFileLogging } = require("./functions/fileSystemUtils.js"); // Import the new function
 
-const config = require("./config.js");
+// Load config - support test config path from environment
+let config;
+if (process.env.NODE_CONFIG_PATH) {
+    console.log('Loading test config from:', process.env.NODE_CONFIG_PATH);
+    config = require(process.env.NODE_CONFIG_PATH).clientConfig;
+} else {
+    config = require("./config.js");
+}
 const { url } = require("inspector");
 const masterAdress = config.activeConfig.base.master_addr;
 const worker = config.activeConfig.worker;
 const baseConfig = config.activeConfig.base;
 //var config = require("../config_openwpm.js");
 
+// Initialize modules with the loaded configuration
+fileSystemUtils.init(config);
+spawnedScripts.init(config);
+
 const { colorize } = require("./functions/fileSystemUtils.js");
 
 const dirName = 0;
 
 var waitingTime = 0;
-var totalUrlsForFormatting = 0; // Variable to store total URLs for formatting
 
 socket = io(masterAdress,{
   "reconnection" : true,
@@ -84,7 +94,6 @@ socket.on("crawlRootDir", async (data) => {
 
   if (typeof data === 'object' && data !== null) {
     const receivedTimestamp = data.crawlTimestamp;
-    const receivedTotalUrls = data.totalUrls;
 
     if (receivedTimestamp) {
       // console.log(colorize("INFO:", "gray") + "Received crawl timestamp from master: " + receivedTimestamp); // DEBUG
@@ -107,12 +116,6 @@ socket.on("crawlRootDir", async (data) => {
       console.warn(colorize("WARN:", "yellow") + "crawlRootDir event received without crawlTimestamp.");
     }
 
-    if (receivedTotalUrls !== undefined) {
-      totalUrlsForFormatting = receivedTotalUrls;
-      console.log(colorize("INFO:", "gray") + "Total URLs for formatting set to: " + totalUrlsForFormatting + " (from crawlRootDir)");
-    } else {
-      console.warn(colorize("WARN:", "yellow") + "crawlRootDir event received without totalUrls.");
-    }
   } else {
     // Fallback for old string-only data, though scheduler should now send an object
     console.warn(colorize("WARN:", "yellow") + "crawlRootDir received data in unexpected format. Expecting an object.");
@@ -159,7 +162,7 @@ socket.on("start_capturer", async (jobData) => {
   }
 
   // Create parameters for each URL, including the index
-  const iterationConfig = createUrlIterationConfig(clearUrl, urlIndex);
+  const iterationConfig = createUrlIterationConfig(jobData);
 
   spawnedScripts.sendVisitUrlCommand(iterationConfig);
 });
@@ -192,12 +195,14 @@ socket.on("visit_url", async (jobData) => {
   console.log(colorize("SOCKETIO:", "cyan") + ` Job received (Signal visit_url) for URL: "${clearUrl}" (Index: ${urlIndex})`);
 
   // Create parameters for each URL, including the index
-  const iterationConfig = createUrlIterationConfig(clearUrl, urlIndex);
+  const iterationConfig = createUrlIterationConfig(jobData);
 
-  spawnedScripts.sendVisitUrlCommand(iterationConfig);
+  await spawnedScripts.sendVisitUrlCommand(iterationConfig);
 });
 
-function createUrlIterationConfig(clearUrl, urlIndex) { // urlIndex is 1-based
+function createUrlIterationConfig(jobData) { // urlIndex is 1-based
+  const { clearUrl, urlIndex, totalUrls } = jobData;
+
   const config = {
       url: '',
       userAgent: null,
@@ -205,11 +210,11 @@ function createUrlIterationConfig(clearUrl, urlIndex) { // urlIndex is 1-based
       clearUrl: clearUrl,
       urlIndex: urlIndex, // Already 1-based
       visitDuration: baseConfig.pagevisit_duration,
-      totalUrls: totalUrlsForFormatting // Pass totalUrls for formatting
+      totalUrls: totalUrls
   };
   //console.log("createUrlIterationConfig: " + JSON.stringify(config)); // debug
 
-  if (clearUrl.toString() === "calibration") { // Pass scheduler Webserver as URL
+  if (clearUrl.toString().startsWith("calibration")) { // Pass scheduler Webserver as URL
       config.url = masterAdress + "/client/" + socket.id;
       config.userAgent = worker.client_name;
       config.visitDuration = 2;
@@ -257,7 +262,7 @@ socket.on("killchildprocess", async data => {
   // Saving har file 
 socket.on("savehar", async data => {
 
-  console.log(colorize("SOCKETIO:", "cyan") + " Signal savehar received");
+  console.log(colorize("SOCKETIO:", "cyan") + " Signal savehar received"); // todo legacy signal, remove
 
   spawnedScripts.handleHarFile();
 });
@@ -297,7 +302,6 @@ process.on('proxyInitialized', () => {
 // Export totalUrlsForFormatting for other modules if needed (alternative to passing it through every function)
 module.exports = {
   getSocket: () => socket, // If other modules need the socket instance
-  getTotalUrlsForFormatting: () => totalUrlsForFormatting
 };
 
 // Listen for exit events to avoid zombie child processes

@@ -14,6 +14,8 @@ const configuration = {
 		persistent_proxy: true,							// set true to keep the proxy running after the browser is closed
 		proxy_debug_output: false,						// Set true to show all proxy stdout output, false to show only processed IPC messages
 	},
+	// NOTE: Browser profiles are now centrally managed and stored in:
+	// {crawl_data_path}/{timestamp}/{worker_name}_browser_profile/
 	puppeteer: {
 		client_name: "puppeteer", 						// must be unique
 		headless: false,

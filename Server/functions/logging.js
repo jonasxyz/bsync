@@ -8,8 +8,10 @@ var file = "";
 module.exports ={
 
     startLog : function (urlList, date, storagePath) {
-
-        file = path.join(storagePath, "CRAWL_" + urlList.substr(0, urlList.lastIndexOf(".")) + "_" + date + ".csv");
+        // Extract just the filename from the URL list path, removing any directory separators
+        const urlListFilename = path.basename(urlList, path.extname(urlList));
+        
+        file = path.join(storagePath, "CRAWL_" + urlListFilename + "_" + date + ".csv");
         try {
             fs.writeFileSync(file, "STATUS, ITERATION, CLIENT, DATE, READY AFTER(MS), WATINGTIME(MS), ESTIMATED ACCESS AFTER(MS), EXIT AFTER(MS), ESTIMATED MAX DELAY(MS)");
         } catch (error) {

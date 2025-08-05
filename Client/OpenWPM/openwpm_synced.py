@@ -132,11 +132,13 @@ class OpenWPMCrawler:
         self.args = args
         self.manager = None
         self.num_browsers = 1
+        self.crawling_in_progress = False # Add a flag to track crawl state
         
         # Configure screen resolution and page load timeout first
         self.screen_width = getattr(self.args, 'screen_width', SCREEN_WIDTH)
         self.screen_height = getattr(self.args, 'screen_height', SCREEN_HEIGHT)
         self.page_load_timeout = getattr(self.args, 'page_load_timeout', PAGE_LOAD_TIMEOUT)
+        self.log_file_path = self.args.logfilepath
         
         # Create configuration
         self.manager_params = ManagerParams(num_browsers=self.num_browsers)
@@ -178,7 +180,7 @@ class OpenWPMCrawler:
     def _configure_browser_param(self, browser_param):
         """Configures a single browser parameter."""
         # Disable OpenWPM instrumentation
-        browser_param.http_instrument = False
+        browser_param.http_instrument = True
         browser_param.cookie_instrument = False
         browser_param.navigation_instrument = False
         browser_param.js_instrument = False
@@ -260,7 +262,11 @@ class OpenWPMCrawler:
         """Sets up the data directory."""
         data_directory = Path(self.args.crawldatapath)
         self.manager_params.data_directory = data_directory
-        self.manager_params.log_path = data_directory / "openwpm.log"
+        if self.log_file_path:
+            self.manager_params.log_path = Path(self.log_file_path)
+            log_message(f"OpenWPM log path set to: {self.log_file_path}")
+        else:
+            self.manager_params.log_path = data_directory / "openwpm.log"
         self.data_directory = data_directory
     
     def _on_shutdown(self, signal_received, frame):
@@ -309,6 +315,8 @@ class OpenWPMCrawler:
     def _visit_url(self, url, wait_time=0, visit_duration=3):
         """Visits a URL with specified parameters."""
 
+        self.crawling_in_progress = True # Set the flag to indicate a crawl is running
+
         # Validate wait_time and set to 0 if invalid
         if not isinstance(wait_time, (int, float)) or wait_time < 0:
             wait_time = 0
@@ -324,10 +332,10 @@ class OpenWPMCrawler:
                 log_message(f"URL {url} visited successfully")
                 print(f"CommandSequence for {url} ran successfully")
 
-                # Could Send URL_DONE here, but it's too late to be accurate.
-                # Instead, we send it in the WaitForDoneCommand.
-                #sys.stdout.write(f"URL_DONE:{url}\n")
-                #sys.stdout.flush()
+                # URL_DONE is no longer sent here.
+                # It is now sent by WaitForDoneCommand to ensure accurate timing.
+                # sys.stdout.write(f"URL_DONE {url}\n")
+                # sys.stdout.flush()
             else:
                 if error_info:
                     error_type = error_info.get("error_type", "unknown")
@@ -345,6 +353,7 @@ class OpenWPMCrawler:
             
             sys.stdout.write("BROWSER_FINISHED\n")
             sys.stdout.flush()
+            self.crawling_in_progress = False # Reset the flag
         
         # Create CommandSequence
         command_sequence = CommandSequence(
@@ -360,9 +369,10 @@ class OpenWPMCrawler:
         )
         
         # Append WaitForDoneCommand to command sequence to signal when the page was loaded
+        # Re-enabled for better accuracy, with improved stability.
         command_sequence.append_command(
-            WaitForDoneCommand(url=url, timeout=2, additional_wait=0), 
-            timeout=5 # TODO: appropriate timeout
+            WaitForDoneCommand(url=url, timeout=self.page_load_timeout - 2, additional_wait=0), 
+            timeout=self.page_load_timeout # Use the full page load timeout
         )
         
         log_message(f"Visiting URL: {url}")
@@ -370,9 +380,9 @@ class OpenWPMCrawler:
         # Execute
         self.manager.execute_command_sequence(command_sequence)
         
-        # URL_DONE Signal removed
-        #sys.stdout.write("URL_DONE\n")
-        #sys.stdout.flush()
+        # URL_DONE Signal moved to callback function for proper timing
+        # sys.stdout.write("URL_DONE\n")
+        # sys.stdout.flush()
     
     def _restart_browsers(self, clear_profile=False):
         """Restarts all browsers."""
@@ -398,6 +408,10 @@ class OpenWPMCrawler:
     
     def _handle_visit_url_command(self, line):
         """Handles visit_url commands."""
+        if self.crawling_in_progress:
+            log_message("Crawl already in progress, ignoring new visit_url command.", "WARNING")
+            return
+
         data = parse_command_data(line, "visit_url")
         if not data:
             return
@@ -491,6 +505,8 @@ def main():
 
     parser.add_argument("--browserprofilepath", type=str, default=None, 
                        help="Custom base path for browser profiles")
+    parser.add_argument("--logfilepath", type=str, default=None,
+                        help="Full path for the OpenWPM log file.")
     
     args = parser.parse_args()
     crawler = OpenWPMCrawler(args)

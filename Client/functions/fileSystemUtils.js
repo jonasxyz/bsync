@@ -1,7 +1,10 @@
 const fs = require('fs');
 const path = require('path');
-const config = require("../config.js");
+// const config = require("../config.js"); // Removed to allow dependency injection
 const util = require('util'); // For formatting log messages
+
+let workerConfig;
+let baseConfig;
 
 // Helper function for colored console output
 const colors = {
@@ -31,9 +34,25 @@ let dirCreated = false; // Flag to indicate if the main crawl directory has been
 const URLS_SUBDIR = 'urls';
 const PROFILES_SUBDIR = 'profiles';
 const LOGS_SUBDIR = 'logs';
+const OPENWPM_DATA_SUBDIR = 'openwpm_data';
 
-const workerConfig = config.activeConfig.worker;
-const baseConfig = config.activeConfig.base;
+// const workerConfig = config.activeConfig.worker; // Removed
+// const baseConfig = config.activeConfig.base; // Removed
+
+/**
+ * Initializes the file system utility module with the correct configuration.
+ * This must be called before any other function in this module.
+ * @param {object} passedConfig - The configuration object from worker.js.
+ */
+function init(passedConfig) {
+    if (!passedConfig || !passedConfig.activeConfig || !passedConfig.activeConfig.worker || !passedConfig.activeConfig.base) {
+        console.error(colorize("ERROR:", "red") + " fileSystemUtils init received an invalid configuration object.");
+        // Exit or throw error because without config, nothing will work correctly
+        process.exit(1);
+    }
+    workerConfig = passedConfig.activeConfig.worker;
+    baseConfig = passedConfig.activeConfig.base;
+}
 
 /**
  * Formats a URL index into a string with leading zeros.
@@ -117,7 +136,8 @@ async function createDir(timestampFromWorker) {
             const subdirsToCreate = [
                 path.join(baseCrawlPath, URLS_SUBDIR),
                 path.join(baseCrawlPath, PROFILES_SUBDIR),
-                path.join(baseCrawlPath, LOGS_SUBDIR)
+                path.join(baseCrawlPath, LOGS_SUBDIR),
+                path.join(baseCrawlPath, OPENWPM_DATA_SUBDIR)
             ];
 
             Promise.all(subdirsToCreate.map(subdir => 
@@ -125,7 +145,7 @@ async function createDir(timestampFromWorker) {
             ))
             .then(() => {
                 dirCreated = true;
-                console.log(colorize("STATUS:", "green") + ` Created subdirectories (urls, profiles, logs) in: ${baseCrawlPath}`);
+                console.log(colorize("STATUS:", "green") + ` Created subdirectories (urls, profiles, logs, openwpm_data) in: ${baseCrawlPath}`);
                 resolve(baseCrawlPath); // Resolve with the main crawl path
             })
             .catch(subdirErr => {
@@ -268,26 +288,6 @@ async function createRemoteProfileDir() {
     });
 }
 
-module.exports = {
-    createDir,
-    createUrlDir,
-    createRemoteUrlDir,
-    createBrowserProfileDir,
-    createRemoteProfileDir,
-    checkBackslash,
-    replaceDotWithUnderscore,
-    formatUrlIndex,
-    prettySize,
-    getCrawlDir: () => crawlDir,
-    getCrawlDirTimestamp: () => crawlDirTimestampExternal,
-    isDirCreated: () => dirCreated,
-    colorize, 
-    colors,    
-    URLS_SUBDIR, 
-    PROFILES_SUBDIR, 
-    LOGS_SUBDIR
-};
-
 /**
  * Sets up console and file logging for the worker.
  * Overrides console methods to write to both terminal and a log file.
@@ -396,4 +396,25 @@ function setupWorkerConsoleAndFileLogging(logDirectory, logFileName) {
 const originalConsoleLog = console.log;
 const originalConsoleError = console.error;
 
-module.exports.setupWorkerConsoleAndFileLogging = setupWorkerConsoleAndFileLogging; 
+module.exports = {
+    init,
+    createDir,
+    createUrlDir,
+    createRemoteUrlDir,
+    createBrowserProfileDir,
+    createRemoteProfileDir,
+    checkBackslash,
+    replaceDotWithUnderscore,
+    formatUrlIndex,
+    prettySize,
+    getCrawlDir: () => crawlDir,
+    getCrawlDirTimestamp: () => crawlDirTimestampExternal,
+    isDirCreated: () => dirCreated,
+    colorize,
+    colors,
+    URLS_SUBDIR,
+    PROFILES_SUBDIR,
+    LOGS_SUBDIR,
+    OPENWPM_DATA_SUBDIR,
+    setupWorkerConsoleAndFileLogging
+}; 

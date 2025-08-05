@@ -50,10 +50,12 @@ let firefoxProcess = null;
 let readySignalSent = false;
 let tempProfileDir = null;
 let profileCreated = false;
+let currentUrlForScreenshot = null; // Store URL for screenshot naming
 
 // Proxy configuration - initialize with values from config if possible
 let proxyHost = worker.proxy_host || null;
 let proxyPort = worker.proxy_port || null;
+let screenshotPath = null; // Will be set by arguments
 
 // AutoLoad configuration
 let firefoxInstallPath = null;
@@ -71,6 +73,10 @@ function parseArguments() {
     if (arg === '--browserprofilepath' && process.argv[index + 1]) {
       customProfilePath = process.argv[index + 1];
       console.log('Custom profile path set:', customProfilePath);
+    }
+    if (arg === '--screenshotpath' && process.argv[index + 1]) {
+      screenshotPath = process.argv[index + 1];
+      console.log('Screenshot path set:', screenshotPath);
     }
     if (arg === '--firefox-path' && process.argv[index + 1]) {
       firefoxInstallPath = process.argv[index + 1];
@@ -121,6 +127,20 @@ wss.on('connection', (ws) => {
             process.stdout.write("URL_DONE\n");
           }
           break;
+        case 'SCREENSHOT_DATA':
+            if (screenshotPath) {
+                try {
+                    const base64Data = data.data.replace(/^data:image\/png;base64,/, "");
+                    const urlPath = (currentUrlForScreenshot || 'screenshot').replace(/[^a-zA-Z0-9]/g, '_');
+                    const screenshotFilePath = path.join(screenshotPath, `${urlPath}_${Date.now()}.png`);
+                    fs.writeFileSync(screenshotFilePath, base64Data, 'base64');
+                    console.log(`Screenshot saved to ${screenshotFilePath}`);
+                    process.stdout.write(`SCREENSHOT_PATH:${screenshotFilePath}\n`);
+                } catch (error) {
+                    console.error("Error saving screenshot:", error);
+                }
+            }
+            break;
         case 'navigation_error':
           console.error(`Navigation error for ${data.url}: ${data.error}`);
           // Continue processing, don't break the flow
@@ -323,13 +343,15 @@ process.stdin.on('readable', () => {
           }
 
           console.log(`visit_url received from worker.js: url: "${data.url}" visitDuration: ${data.visitDuration} waitingTime: ${data.waitingTime}`);
+          currentUrlForScreenshot = data.url; // Save URL for screenshot naming
 
           // Forward URL command to the extension
           sendCommandToExtension({
             type: 'VISIT_URL',
             url: data.url,
             stayTime: parseInt(data.visitDuration) || 3,
-            waitingTime: data.waitingTime || 0
+            waitingTime: data.waitingTime || 0,
+            takeScreenshot: !!screenshotPath // Send screenshot command if path is set
           });
         } catch (error) {
           console.error(`Error parsing visit_url command: ${error.message}`);

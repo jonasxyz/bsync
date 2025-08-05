@@ -14,13 +14,15 @@ import sys
 import json
 import signal
 import time
+import os
+from hashlib import md5
 from pathlib import Path
 from typing import Literal
 from time import sleep
 import atexit
 
 from openwpm.command_sequence import CommandSequence
-from openwpm.commands.browser_commands import GetCommand
+from openwpm.commands.browser_commands import GetCommand, SaveScreenshotCommand as OriginalSaveScreenshotCommand
 from openwpm.config import BrowserParams, ManagerParams
 from openwpm.storage.sql_provider import SQLiteStorageProvider
 from openwpm.task_manager import TaskManager
@@ -45,6 +47,40 @@ PAGE_LOAD_TIMEOUT = 30  # Default: 30
 # Timeout for OpenWPM GetCommand that visits a page in seconds
 VISIT_PAGE_TIMEOUT = 30 # Default: 30
 # ========================
+
+
+class CustomSaveScreenshotCommand(OriginalSaveScreenshotCommand):
+    """A custom command to save a screenshot to a specific path, overriding the default."""
+    
+    def __init__(self, path: Path, suffix: str = ""):
+        super().__init__(suffix)
+        self.path = path
+    
+    def __repr__(self):
+        return f"CustomSaveScreenshotCommand(path='{self.path}', suffix='{self.suffix}')"
+    
+    def execute(self, webdriver, browser_params, manager_params, extension_socket):
+        """Saves a screenshot to the specified path."""
+        if self.suffix:
+            suffix_str = f"-{self.suffix}"
+        else:
+            suffix_str = ""
+            
+        try:
+            urlhash = md5(webdriver.current_url.encode("utf-8")).hexdigest()
+            
+            # Ensure the directory exists
+            self.path.mkdir(parents=True, exist_ok=True)
+            
+            # Construct the output file name
+            outname = self.path / f"{self.visit_id}-{urlhash}{suffix_str}.png"
+            
+            # Save the screenshot
+            webdriver.save_screenshot(str(outname))
+            log_message(f"Screenshot saved to {outname}", "DEBUG")
+            
+        except Exception as e:
+            log_message(f"Failed to save screenshot: {e}", "ERROR")
 
 
 class WaitForDoneCommand(BaseCommand):
@@ -363,11 +399,21 @@ class OpenWPMCrawler:
         )
         
         # Add GetCommand
-        command_sequence.append_command(
-            GetCommand(url=url, sleep=visit_duration), 
-            timeout=VISIT_PAGE_TIMEOUT
-        )
-        
+        # command_sequence.append_command(
+        #    GetCommand(url=url, sleep=visit_duration), 
+        #    timeout=VISIT_PAGE_TIMEOUT
+                
+        command_sequence.get(sleep=visit_duration, timeout=VISIT_PAGE_TIMEOUT)
+
+        # Add screenshot command if path is provided
+        if self.args.screenshotpath:
+            screenshot_path = Path(self.args.screenshotpath)
+            command_sequence.append_command(
+                CustomSaveScreenshotCommand(path=screenshot_path, suffix="final"), 
+                timeout=30
+            )
+            log_message(f"Screenshot command added for path: {screenshot_path}")
+
         # Append WaitForDoneCommand to command sequence to signal when the page was loaded
         # Re-enabled for better accuracy, with improved stability.
         command_sequence.append_command(
@@ -470,7 +516,6 @@ class OpenWPMCrawler:
             None,
         ) as manager:
             self.manager = manager
-            
             log_message("TaskManager started")
             
             # Check browser readiness
@@ -507,6 +552,8 @@ def main():
                        help="Custom base path for browser profiles")
     parser.add_argument("--logfilepath", type=str, default=None,
                         help="Full path for the OpenWPM log file.")
+    parser.add_argument("--screenshotpath", type=str, default=None,
+                        help="Path to save screenshots.")
     
     args = parser.parse_args()
     crawler = OpenWPMCrawler(args)
@@ -514,4 +561,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main() 
+    main()

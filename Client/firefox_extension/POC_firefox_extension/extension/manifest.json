@@ -7,8 +7,7 @@
     "tabs",
     "webNavigation",
     "webRequest",
-    "http://*/*",
-    "https://*/*",
+    "<all_urls>",
     "ws://*/*",
     "wss://*/*"
   ],

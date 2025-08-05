@@ -34,6 +34,7 @@ let dirCreated = false; // Flag to indicate if the main crawl directory has been
 const URLS_SUBDIR = 'urls';
 const PROFILES_SUBDIR = 'profiles';
 const LOGS_SUBDIR = 'logs';
+const SCREENSHOTS_SUBDIR = 'screenshots';
 const OPENWPM_DATA_SUBDIR = 'openwpm_data';
 
 // const workerConfig = config.activeConfig.worker; // Removed
@@ -137,6 +138,7 @@ async function createDir(timestampFromWorker) {
                 path.join(baseCrawlPath, URLS_SUBDIR),
                 path.join(baseCrawlPath, PROFILES_SUBDIR),
                 path.join(baseCrawlPath, LOGS_SUBDIR),
+                path.join(baseCrawlPath, SCREENSHOTS_SUBDIR),
                 path.join(baseCrawlPath, OPENWPM_DATA_SUBDIR)
             ];
 
@@ -145,7 +147,7 @@ async function createDir(timestampFromWorker) {
             ))
             .then(() => {
                 dirCreated = true;
-                console.log(colorize("STATUS:", "green") + ` Created subdirectories (urls, profiles, logs, openwpm_data) in: ${baseCrawlPath}`);
+                console.log(colorize("STATUS:", "green") + ` Created subdirectories (urls, profiles, logs, screenshots, openwpm_data) in: ${baseCrawlPath}`);
                 resolve(baseCrawlPath); // Resolve with the main crawl path
             })
             .catch(subdirErr => {
@@ -415,6 +417,7 @@ module.exports = {
     URLS_SUBDIR,
     PROFILES_SUBDIR,
     LOGS_SUBDIR,
+    SCREENSHOTS_SUBDIR,
     OPENWPM_DATA_SUBDIR,
     setupWorkerConsoleAndFileLogging
 }; 

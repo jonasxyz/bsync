@@ -24,6 +24,7 @@ const headless = args.headless || false;
 const datapath = args.datapath || null;
 const reset = args.reset || false;
 const browserprofilepath = args.browserprofilepath || null;
+const screenshotpath = args.screenshotpath || null;
 
 const workerConfig = config.activeConfig.worker;
 
@@ -105,6 +106,18 @@ async function visitUrl(url, waitingtime = 0, stayTime = 3, restart = false) {
 
         // Stay on site for stayTime
         await new Promise(resolve => setTimeout(resolve, stayTime * 1000));
+
+        if (screenshotpath) {
+            try {
+                const urlPath = url.replace(/[^a-zA-Z0-9]/g, '_');
+                const screenshotFilePath = path.join(screenshotpath, `${urlPath}_${Date.now()}.png`);
+                await page.screenshot({ path: screenshotFilePath, fullPage: true });
+                console.log(`Screenshot saved to ${screenshotFilePath}`);
+                process.stdout.write(`SCREENSHOT_PATH:${screenshotFilePath}\n`);
+            } catch (error) {
+                console.error("Error taking screenshot:", error);
+            }
+        }
         
         // Signalisiere, dass die URL-Verarbeitung abgeschlossen ist
         process.stdout.write("URL_DONE\n");

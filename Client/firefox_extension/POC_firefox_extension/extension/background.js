@@ -7,6 +7,7 @@ let currentUrl = null;
 let tabId = null;
 let stayTimeMs = 3000; // Default stay time in milliseconds
 let waitingTime = 0; // Default waiting time before loading URL
+let takeScreenshot = false; // Whether to take a screenshot
 
 let timerActive = false; // True if a stay period (after success or error) or navigation timeout handling is active
 
@@ -46,10 +47,10 @@ function connectToServer() {
           waitingTime = message.waitingTime;
           console.log(`Waiting ${waitingTime}ms before loading URL`);
           setTimeout(() => {
-            visitUrl(message.url, message.stayTime || 3);
+            visitUrl(message.url, message.stayTime || 3, message.takeScreenshot || false);
           }, waitingTime);
         } else {
-          visitUrl(message.url, message.stayTime || 3);
+          visitUrl(message.url, message.stayTime || 3, message.takeScreenshot || false);
         }
       } else if (message.type === 'reset') {
         resetBrowser();
@@ -111,38 +112,47 @@ function listenForAboutBlankAndFinalize(expectedTabId, originContext) {
 }
 
 // Central function to finalize a navigation cycle (success or error)
-function finalizeCycle(urlForDone, errorInfo) {
+async function finalizeCycle(urlForDone, errorInfo) {
     console.log(`Finalizing cycle for ${urlForDone}. Error: ${errorInfo ? errorInfo.message : 'No'}`);
-    // timerActive is reset by the caller (onCompleted/handleNavigationError's setTimeout) before this is called
-    // or just before navigating to about:blank if not already done.
-    timerActive = false; 
+    timerActive = false;
 
-    // Send URL_DONE signal
-    const urlDoneMessage = { type: 'URL_DONE', url: urlForDone };
-    if (errorInfo && errorInfo.isError) {
-        urlDoneMessage.error = true;
-        urlDoneMessage.errorMessage = errorInfo.message;
+    try {
+        // Take screenshot if requested
+        if (takeScreenshot) {
+            try {
+                const dataUrl = await browser.tabs.captureVisibleTab();
+                sendToServer({ type: 'SCREENSHOT_DATA', data: dataUrl });
+            } catch (err) {
+                console.error("Error taking screenshot:", err);
+            }
+        }
+
+        // Send URL_DONE signal
+        const urlDoneMessage = { type: 'URL_DONE', url: urlForDone };
+        if (errorInfo && errorInfo.isError) {
+            urlDoneMessage.error = true;
+            urlDoneMessage.errorMessage = errorInfo.message;
+        }
+        sendToServer(urlDoneMessage);
+
+        // Then navigate to about:blank
+        await browser.tabs.update(tabId, { url: 'about:blank' });
+        const context = errorInfo && errorInfo.isError ? `${urlForDone} (after error: ${errorInfo.message})` : urlForDone;
+        listenForAboutBlankAndFinalize(tabId, context);
+
+    } catch (error) {
+        console.error(`Error during finalizeCycle for ${urlForDone}:`, error);
+        cleanupAboutBlankListener(); // Ensure listener is cleaned up
+        sendToServer({ type: 'BROWSER_FINISHED' }); // Still send BROWSER_FINISHED to unblock the system
     }
-    sendToServer(urlDoneMessage);
-
-    // Then navigate to about:blank
-    browser.tabs.update(tabId, { url: 'about:blank' })
-        .then(() => {
-            const context = errorInfo && errorInfo.isError ? `${urlForDone} (after error: ${errorInfo.message})` : urlForDone;
-            listenForAboutBlankAndFinalize(tabId, context);
-        })
-        .catch(error => {
-            console.error(`Error navigating to about:blank during finalizeCycle for ${urlForDone}:`, error);
-            cleanupAboutBlankListener(); // Ensure listener is cleaned up
-            sendToServer({ type: 'BROWSER_FINISHED' }); // Still send BROWSER_FINISHED
-        });
 }
 
 // Load URL in a tab
-function visitUrl(url, stayTime = 3) {
+function visitUrl(url, stayTime = 3, screenshot = false) {
   console.log(`Loading URL: ${url} with stay time: ${stayTime}s`);
   currentUrl = url;
   stayTimeMs = stayTime * 1000;
+  takeScreenshot = screenshot;
   
   // Clear any pending stay timeout from a previous navigation cycle
   if (currentNavigationStayTimeoutId) {

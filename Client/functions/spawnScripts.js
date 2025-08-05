@@ -7,7 +7,7 @@ const FormData = require('form-data');
 
 const crawlEnvInfo = require("./crawlEnvInfo.js");
 const fileSystemUtils = require("./fileSystemUtils.js"); // Added import for new utility functions
-const { colorize, colors, prettySize, createDir, createUrlDir, createRemoteUrlDir, createBrowserProfileDir, createRemoteProfileDir, replaceDotWithUnderscore, getCrawlDir, getCrawlDirTimestamp, URLS_SUBDIR, PROFILES_SUBDIR, LOGS_SUBDIR, OPENWPM_DATA_SUBDIR, isDirCreated } = fileSystemUtils; // Destructure imported functions
+const { colorize, colors, prettySize, createDir, createUrlDir, createRemoteUrlDir, createBrowserProfileDir, createRemoteProfileDir, replaceDotWithUnderscore, getCrawlDir, getCrawlDirTimestamp, URLS_SUBDIR, PROFILES_SUBDIR, LOGS_SUBDIR, SCREENSHOTS_SUBDIR, OPENWPM_DATA_SUBDIR, isDirCreated } = fileSystemUtils; // Destructure imported functions
 
 var dataGathered = false;
 
@@ -117,8 +117,22 @@ module.exports =
         
             if (fileformat === ".js") {
 
-                spawnArgs.push("--crawldatapath", browserProfileDir);
                 spawnArgs.push("--browserprofilepath", browserProfileDir);
+                
+                // Specific handling for integrated_firefox_controller.js
+                if (worker.crawl_script.includes('integrated_firefox_controller.js')) {
+                    if (baseConfig.take_screenshot) {
+                        const screenshotDir = path.join(fileSystemUtils.getCrawlDir(), SCREENSHOTS_SUBDIR);
+                        spawnArgs.push("--screenshotpath", screenshotDir);
+                    }
+                } else {
+                    // Assumes puppeteer or other .js frameworks
+                    spawnArgs.push("--crawldatapath", browserProfileDir);
+                    if (baseConfig.take_screenshot) {
+                        const screenshotDir = path.join(fileSystemUtils.getCrawlDir(), SCREENSHOTS_SUBDIR);
+                        spawnArgs.push("--screenshotpath", screenshotDir);
+                    }
+                }
 
                 browser = spawn( 'node', spawnArgs,{ 
                     cwd: worker.script_path, 
@@ -134,6 +148,12 @@ module.exports =
                 spawnArgs.push("--crawldatapath", openWpmDataDir);
                 spawnArgs.push("--browserprofilepath", browserProfileDir);
                 spawnArgs.push("--logfilepath", openWpmLogFile);
+
+                if (baseConfig.take_screenshot) {
+                    const screenshotDir = path.join(fileSystemUtils.getCrawlDir(), SCREENSHOTS_SUBDIR);
+                    spawnArgs.push("--screenshotpath", screenshotDir);
+                }
+
 
                 browser = spawn("conda run -n openwpm --no-capture-output python -u", spawnArgs, {
                     shell: true,

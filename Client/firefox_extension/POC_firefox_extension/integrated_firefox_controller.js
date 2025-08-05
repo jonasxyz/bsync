@@ -44,6 +44,7 @@ const EXTENSION_PATH = path.join(__dirname, 'extension');
 
 // State variables
 let extensionConnection = null;
+let commandQueue = [];
 let browserIsReady = false;
 let firefoxProcess = null;
 let readySignalSent = false;
@@ -90,6 +91,13 @@ console.log(`WebSocket server started on port ${WS_PORT}`);
 wss.on('connection', (ws) => {
   console.log('New WebSocket connection from Firefox extension');
   extensionConnection = ws;
+
+  // Process any queued commands
+  while (commandQueue.length > 0) {
+    const command = commandQueue.shift();
+    console.log(`Sending queued command to Firefox: ${JSON.stringify(command)}`);
+    sendCommandToExtension(command);
+  }
   
   // Receive messages from extension
   ws.on('message', (message) => {
@@ -150,7 +158,8 @@ function sendCommandToExtension(command) {
     extensionConnection.send(JSON.stringify(command));
     return true;
   } else {
-    console.error('No connection to Firefox extension');
+    console.log('No connection to Firefox extension yet. Queuing command.');
+    commandQueue.push(command);
     return false;
   }
 }
@@ -354,4 +363,4 @@ process.stdin.on('readable', () => {
   });
   
   console.log('Integrated Firefox controller ready for commands from worker.js and connections from Firefox');
-})(); 
+})();

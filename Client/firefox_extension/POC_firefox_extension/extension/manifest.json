@@ -16,15 +16,9 @@
     "scripts": ["background.js"],
     "persistent": true
   },
-  "content_scripts": [
-    {
-      "matches": ["<all_urls>"],
-      "js": ["content.js"]
-    }
-  ],
   "browser_specific_settings": {
     "gecko": {
       "id": "bsync-firefox@example.com"
     }
   }
-} 
+}

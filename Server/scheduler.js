@@ -23,6 +23,7 @@ const {server} = require('./functions/server.js');
 const { logMessage } = require('./functions/helper.js');
 const { setupConsoleAndFileLogging } = require('./functions/helper.js');
 const fs = require('fs');
+const { spawn } = require('child_process');
 
 
 var io = require("socket.io")(server);
@@ -496,9 +497,18 @@ io.on("connection", socket => {
 
             if( urlsDone == numIterations){
 
-                console.log("\x1b[33mSTATUS: \x1b[0m" + "All Websites crawled.\nShutting down server...", "\x1b[0m");
+                console.log("\x1b[33mSTATUS: \x1b[0m" + "All Websites crawled.");
+
+                if (config.analyze_hars_after_crawl) {
+                    runHarAnalysis();
+                }
+
+                console.log("\x1b[33mSTATUS: \x1b[0m" + "Shutting down server...", "\x1b[0m");
                 io.sockets.emit("close", "finished");
+                // Allow some time for analysis script to run before exiting
+                setTimeout(() => {
                 process.exit();
+                }, 5000);
 
             } else if (config.re_calibration != 0 && urlsDone % config.re_calibration == 0) { // recalibrate after number of website crawled 
 
@@ -960,6 +970,50 @@ function createUrlSubdirectory(rootDirPath) {
                 resolve(urlDirPath);
             }
         });
+    });
+}
+
+function runHarAnalysis() {
+    console.log("\x1b[33mSTATUS: \x1b[0m" + "Starting automatic HAR analysis on NFS share...");
+
+    const analysisScriptPath = path.join(__dirname, '..', 'harAnalysis', 'harAnalysis.js');
+    // The HAR files are on the NFS share. The path is constructed from nfs_server_path and the current crawl's timestamped folder name.
+    const crawlDataPath = path.join(config.nfs_server_path, crawlTimestamp, 'visited_urls');
+
+    if (!fs.existsSync(analysisScriptPath)) {
+        console.error("\x1b[31mERROR: \x1b[0m" + `HAR analysis script not found at: ${analysisScriptPath}`);
+        return;
+    }
+
+    if (!fs.existsSync(crawlDataPath)) {
+        console.error("\x1b[31mERROR: \x1b[0m" + `Crawl data directory for analysis not found on NFS share: ${crawlDataPath}`);
+        return;
+    }
+
+    console.log(`[HAR Analysis] Running script: node ${analysisScriptPath} --crawl-dir ${crawlDataPath} --format all`);
+
+    const analysisProcess = spawn('node', [analysisScriptPath, '--crawl-dir', crawlDataPath, '--format', 'all'], {
+        detached: true,
+        stdio: 'pipe'
+    });
+    
+    analysisProcess.unref();
+
+    analysisProcess.stdout.on('data', (data) => {
+        console.log(`[HAR Analysis]: ${data.toString()}`);
+    });
+
+    analysisProcess.stderr.on('data', (data) => {
+        console.error(`[HAR Analysis ERROR]: ${data.toString()}`);
+    });
+
+    analysisProcess.on('close', (code) => {
+        if (code === 0) {
+            console.log("\x1b[33mSTATUS: \x1b[0m" + "HAR analysis process detached and running in the background.");
+        } else {
+            // This might not be seen if the parent exits quickly, but it's good for debugging.
+            console.error("\x1b[31mERROR: \x1b[0m" + `HAR analysis process started with errors, exit code ${code}.`);
+        }
     });
 }
 

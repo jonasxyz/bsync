@@ -1,21 +1,24 @@
 #!/bin/bash
 
-# Module 05: Install custom Firefox version (138.0.1)
+# Module 05: Install custom Firefox version (134.0.1)
 
 # Exit the script if any command fails
 set -e
 
-echo "Module 05: Starting installation of Firefox 138.0.1..."
+echo "Module 05: Starting installation of Firefox 134.0.1..."
 
-FIREFOX_VERSION="138.0.1"
-FIREFOX_TARBALL="firefox-${FIREFOX_VERSION}.tar.xz"
+FIREFOX_VERSION="134.0.1"
+# FIREFOX_TARBALL="firefox-${FIREFOX_VERSION}.tar.xz" # for newer firefox releases 
+FIREFOX_TARBALL="firefox-${FIREFOX_VERSION}.tar.bz2" # for older firefox releases (134.0.1)
+
+
 # Adjust language and platform as needed. 'en-US' and 'linux-x86_64' are common defaults.
-FIREFOX_DOWNLOAD_URL="https://ftp.mozilla.org/pub/firefox/releases/${FIREFOX_VERSION}/linux-x86_64/de/${FIREFOX_TARBALL}" # DE
-# FIREFOX_DOWNLOAD_URL="https://ftp.mozilla.org/pub/firefox/releases/${FIREFOX_VERSION}/linux-x86_64/en-US/${FIREFOX_TARBALL}" # International en-US
+# FIREFOX_DOWNLOAD_URL="https://ftp.mozilla.org/pub/firefox/releases/${FIREFOX_VERSION}/linux-x86_64/de/${FIREFOX_TARBALL}" # DE
+FIREFOX_DOWNLOAD_URL="https://ftp.mozilla.org/pub/firefox/releases/${FIREFOX_VERSION}/linux-x86_64/en-US/${FIREFOX_TARBALL}" # International en-US
 
 DOWNLOAD_DIR="/tmp" 
 INSTALL_DIR="/opt/firefox-${FIREFOX_VERSION}"
-SYMLINK_PATH="/usr/local/bin/firefox-138"
+SYMLINK_PATH="/usr/local/bin/firefox-134"
 
 # Check if this version of Firefox is already installed
 if [ -d "$INSTALL_DIR" ] && [ -x "$INSTALL_DIR/firefox" ]; then
@@ -54,7 +57,19 @@ if [ -d "$INSTALL_DIR" ]; then
 fi
 sudo mkdir -p "$INSTALL_DIR" # Ensure INSTALL_DIR exists
 
-if sudo tar -xJf "$DOWNLOAD_DIR/$FIREFOX_TARBALL" -C "$INSTALL_DIR" --strip-components=1; then
+# Determine the correct tar options based on file extension
+if [[ "$FIREFOX_TARBALL" == *.tar.bz2 ]]; then
+    EXTRACT_COMMAND="sudo tar -xjf"
+elif [[ "$FIREFOX_TARBALL" == *.tar.xz ]]; then
+    EXTRACT_COMMAND="sudo tar -xJf"
+else
+    echo "ERROR: Unsupported file extension for $FIREFOX_TARBALL. Must be .tar.bz2 or .tar.xz."
+    sudo rm -f "$DOWNLOAD_DIR/$FIREFOX_TARBALL"
+    exit 1
+fi
+
+echo "Extracting with command: $EXTRACT_COMMAND"
+if $EXTRACT_COMMAND "$DOWNLOAD_DIR/$FIREFOX_TARBALL" -C "$INSTALL_DIR" --strip-components=1; then
     echo "Extraction successful to $INSTALL_DIR."
 else
     echo "ERROR: Failed to extract Firefox tarball."

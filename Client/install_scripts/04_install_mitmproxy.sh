@@ -85,14 +85,13 @@ SYSTEM_CA_CERT_PATH="/usr/local/share/ca-certificates/"
 #SYSTEM_CA_CERT_PATH="/usr/local/share/ca-certificates/mitmproxy-ca-cert.crt" # Todo check .crt is more common for update-ca-certificates
 
 # Add mitmproxy CA certificate to system trust store
-# Note: Not needed for Firefox at the moment, as it does not use the system certificate store.
 if [ -f "$MITMPROXY_CA_CERT_USER_PATH" ]; then
     echo "Adding mitmproxy CA certificate to system trust store..."
     sudo cp "$MITMPROXY_CA_CERT_USER_PATH" "$SYSTEM_CA_CERT_PATH"
     sudo update-ca-certificates
     echo "mitmproxy CA certificate added and trust store updated."
 else
-    echo "ERROR: mitmproxy CA certificate ($MITMPROXY_CA_CERT_USER_PATH) not found. Certificate installatio for chrome failed."
+    echo "ERROR: mitmproxy CA certificate ($MITMPROXY_CA_CERT_USER_PATH) not found. Certificate installation failed."
 fi
 
 mitmproxy --version # For verification

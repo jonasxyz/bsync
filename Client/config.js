@@ -13,6 +13,7 @@ const configuration = {
 
 		persistent_proxy: true,							// set true to keep the proxy running after the browser is closed
 		proxy_debug_output: false,						// Set true to show all proxy stdout output, false to show only processed IPC messages
+		take_screenshot: true,							// Set true to create a screenshot of the visited page
 	},
 	// NOTE: Browser profiles are now centrally managed and stored in:
 	// {crawl_data_path}/{timestamp}/{worker_name}_browser_profile/
@@ -50,7 +51,7 @@ const configuration = {
 		crawl_script : "integrated_firefox_controller.js", 
 		script_path : __dirname + "/firefox_extension/POC_firefox_extension",
 
-		browser_path : "/opt/firefox-138.0.1/firefox",		// Set path to firefox executable e.g. "/opt/firefox-dev/firefox"
+		browser_path : "/opt/firefox-134.0.1/firefox",		// Set path to firefox executable e.g. "/opt/firefox-dev/firefox"
 		browser_profile_path : "",
 		crawl_data_path: "/home/" + os.userInfo().username +"/Downloads/Crawl-Data/",
 

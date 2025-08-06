@@ -19,7 +19,7 @@ try {
   console.log('Using default configuration');
   var worker = { 
     //browser_path: "/usr/bin/firefox", 
-    browser_path: "/opt/firefox-138.0.1/firefox", 
+    browser_path: "/opt/firefox-134.0.1/firefox", 
     enable_proxy: false,
     proxy_host: "localhost", 
     proxy_port: 8080

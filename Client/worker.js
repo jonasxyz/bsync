@@ -226,7 +226,7 @@ function createUrlIterationConfig(jobData) { // urlIndex is 1-based
       config.visitDuration = 2;
       
   } else {
-      config.url = normalizeUrl(clearUrl);
+      config.url = clearUrl;
       config.userAgent = "False";
       config.waitingTime = waitingTime;
   }
@@ -235,13 +235,7 @@ function createUrlIterationConfig(jobData) { // urlIndex is 1-based
 }
 
 
-// For now puppeteer does not append the protocol automatically https://pptr.dev/api/puppeteer.page.goto
-function normalizeUrl(data) {
-  if (!/^(?:f|ht)tps?\:\/\//.test(data)) {
-      return "http://" + data;
-  }
-  return data;
-}
+
 
 socket.on("killchildprocess", async data => {
 

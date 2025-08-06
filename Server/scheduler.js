@@ -507,7 +507,7 @@ io.on("connection", socket => {
                 io.sockets.emit("close", "finished");
                 // Allow some time for analysis script to run before exiting
                 setTimeout(() => {
-                process.exit();
+                    process.exit();
                 }, 5000);
 
             } else if (config.re_calibration != 0 && urlsDone % config.re_calibration == 0) { // recalibrate after number of website crawled 
@@ -648,7 +648,15 @@ io.on("connection", socket => {
             else {
                 if (urlsDone < urlList.length) {
                     let preTempUrl = urlList[urlsDone].toString();
-                    urlToCrawl = preTempUrl.slice(preTempUrl.indexOf(",") + 1);
+                    let rawUrl = preTempUrl.slice(preTempUrl.indexOf(",") + 1);
+                    
+                    // Ensure the URL has a protocol, defaulting to https
+                    if (!rawUrl.startsWith('http://') && !rawUrl.startsWith('https://')) {
+                        urlToCrawl = 'https://' + rawUrl;
+                    } else {
+                        urlToCrawl = rawUrl;
+                    }
+
                     logFunctions.newUrl(urlToCrawl, indexForUrl, new Date().toISOString());
                 } else {
                     console.error("Error: retrieveUrl called but urlsDone has exceeded urlList length.");

@@ -7,7 +7,7 @@ const testConfig = {
         ip: "http://127.0.0.1",
         port: 3000,
         allowed_ping: 100,
-        url_list: "test/verification_test/test_url.txt", // Eine einzelne URL für den Test
+        url_list: "test/verification_test/test_url.csv", // Eine einzelne URL für den Test
         calibration_runs: 2,
         re_calibration: 0,
         re_calibration_dc: false,
@@ -16,6 +16,8 @@ const testConfig = {
         test_run: false, // Wir führen einen normalen Crawl durch, keinen Test-Run
         storage_path: "/home/" + os.userInfo().username + "/Downloads/bsync-test-data",
         remote_storage_nfs: false,
+        take_screenshot: false,							// Set true to create a screenshot of the visited page
+
     },
     // Client-Konfiguration
     client: {
@@ -23,7 +25,7 @@ const testConfig = {
 
         base: {
             master_addr: "http://127.0.0.1:3000",
-            pagevisit_duration: 5,
+            pagevisit_duration: 10,
             nfs_remote_filestorage: false,
             persistent_proxy: true,
             proxy_debug_output: false, // prints all http requests to console

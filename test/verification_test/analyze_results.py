@@ -9,7 +9,7 @@ import re
 # Gemäß der test_config.js
 STORAGE_PATH = os.path.expanduser("~/Downloads/bsync-test-data")
 # Pfad zur URL-Liste, die für den Crawl verwendet wurde
-URL_LIST_PATH = os.path.join(os.path.dirname(__file__), "test_url.txt")
+URL_LIST_PATH = os.path.join(os.path.dirname(__file__), "test_url.csv")
 
 def sanitize_url(url: str) -> str:
     """

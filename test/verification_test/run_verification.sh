@@ -1,5 +1,5 @@
 #!/bin/bash
-# run_verification.sh - Startet den Scheduler und den Worker für den Verifikationstest.
+# run_verification.sh - Startet den Test-Server, Scheduler und Worker für den Verifikationstest.
 
 # Den absoluten Pfad zum Projektverzeichnis ermitteln
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
@@ -18,11 +18,16 @@ AUTO_CLOSE_TERMINAL=false
 cleanup() {
     echo "Säubere Prozesse..."
     # Wenn die PIDs noch existieren, versuche sie zu beenden
-    # Die PIDs beziehen sich auf die Hintergrundprozesse (node oder gnome-terminal).
+    if [ ! -z "$TEST_SERVER_PID" ] && kill -0 $TEST_SERVER_PID 2>/dev/null; then
+        echo "Beende Test-Server (PID: $TEST_SERVER_PID)..."
+        kill $TEST_SERVER_PID
+    fi
     if [ ! -z "$SCHEDULER_PID" ] && kill -0 $SCHEDULER_PID 2>/dev/null; then
+        echo "Beende Scheduler (PID: $SCHEDULER_PID)..."
         kill $SCHEDULER_PID
     fi
     if [ ! -z "$WORKER_PID" ] && kill -0 $WORKER_PID 2>/dev/null; then
+        echo "Beende Worker (PID: $WORKER_PID)..."
         kill $WORKER_PID
     fi
     exit
@@ -36,14 +41,24 @@ export NODE_CONFIG_PATH="$PROJECT_DIR/test/verification_test/test_config.js"
 echo "Using test config: $NODE_CONFIG_PATH"
 
 # Log-Dateien für diesen Testlauf
+TEST_SERVER_LOG="$PROJECT_DIR/test/verification_test/test_server.log"
 SCHEDULER_LOG="$PROJECT_DIR/test/verification_test/scheduler.log"
 WORKER_LOG="$PROJECT_DIR/test/verification_test/worker.log"
 # Alte Logs löschen
-rm -f $SCHEDULER_LOG $WORKER_LOG
+rm -f $TEST_SERVER_LOG $SCHEDULER_LOG $WORKER_LOG
 
 # Pfade zu den Skripten (relativ zum Projektverzeichnis)
+TEST_SERVER_PATH="test/verification_test/test_server.js"
 SCHEDULER_PATH="Server/scheduler.js"
 WORKER_PATH="Client/worker.js"
+
+# Startet den Test-Server immer im Hintergrund
+echo "Starte Test-Server im Hintergrund..."
+(cd "$PROJECT_DIR" && node $TEST_SERVER_PATH > $TEST_SERVER_LOG 2>&1) &
+TEST_SERVER_PID=$!
+echo "Test-Server gestartet mit PID: $TEST_SERVER_PID. Log: $TEST_SERVER_LOG"
+echo "Warte kurz, damit der Test-Server starten kann..."
+sleep 2 # Gibt dem Server einen Moment Zeit zum Starten.
 
 if [ "$START_HIDDEN" = "true" ]; then
     echo "Log-Dateien für diesen Testlauf:"
@@ -115,4 +130,4 @@ else # START_HIDDEN is false
     echo "Beide Prozesse beendet. Führe Analyse aus..."
     # Führe das Analyse-Skript aus
     python3 "$PROJECT_DIR/test/verification_test/analyze_results.py"
-fi 
+fi

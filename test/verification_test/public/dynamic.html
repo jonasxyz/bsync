@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Dynamic Page</title>
+</head>
+<body>
+    <h1>Dynamic Content</h1>
+    <div id="data-container">Loading...</div>
+
+    <script>
+        fetch('/api/data')
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('data-container').innerText = data.message;
+            })
+            .catch(error => {
+                console.error('Error fetching dynamic data:', error);
+                document.getElementById('data-container').innerText = 'Failed to load data.';
+            });
+    </script>
+</body>
+</html>
+

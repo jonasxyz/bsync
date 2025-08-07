@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>WebSocket Page</title>
+</head>
+<body>
+    <h1>WebSocket Test</h1>
+    <div id="messages"></div>
+
+    <script>
+        const ws = new WebSocket('ws://localhost:3000/websocket-endpoint');
+        const messagesDiv = document.getElementById('messages');
+
+        ws.onopen = function() {
+            console.log('WebSocket connection established');
+            ws.send('Hello Server!');
+        };
+
+        ws.onmessage = function(event) {
+            console.log('Message from server: ', event.data);
+            const p = document.createElement('p');
+            p.textContent = event.data;
+            messagesDiv.appendChild(p);
+        };
+
+        ws.onerror = function(error) {
+            console.error('WebSocket Error: ', error);
+        };
+
+        ws.onclose = function() {
+            console.log('WebSocket connection closed');
+        };
+    </script>
+</body>
+</html>
+

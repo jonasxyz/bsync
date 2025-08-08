@@ -69,6 +69,9 @@ class SaveHarCustom:
 
         # If false, omit bodies (request/response) and websocket payloads from HAR
         self.include_payload: bool = False
+        # If true, include CONNECT tunnel handshakes as HAR entries (not browser-visible HTTP).
+        # Default False to match website/browser-level logging and OpenWPM http_instrument.
+        self.include_connect_flows: bool = False
 
     @command.command("save.har")
     def export_har(self) -> None:
@@ -127,7 +130,6 @@ class SaveHarCustom:
                 "file_path": self.save_path,
                 "file_size": len(har),
                 "flows_exported": flows_before_clear,
-                "include_payload": self.include_payload,
                 "flows_remaining_in_proxy": len(self.flows_by_id) # Should always be 0
             })
         except Exception as e:
@@ -294,7 +296,8 @@ class SaveHarCustom:
     # Include CONNECT requests (TLS tunnel setup). If TLS fails later, we still
     # retain a record for the attempted connection.
     def http_connect(self, flow: http.HTTPFlow) -> None:
-        self._save_flow(flow)
+        if self.include_connect_flows:
+            self._save_flow(flow)
 
     # Also record on disconnect events, which may occur without a proper error.
     def clientdisconnect(self, layer) -> None:  # layer carries .flow for HTTP layers
@@ -310,6 +313,9 @@ class SaveHarCustom:
     def _save_flow(self, flow: http.HTTPFlow) -> None:
         # Skip requests to *.proxy.local domains which are used for HTTP control
         if ".proxy.local" in flow.request.pretty_url:
+            return
+        # Skip CONNECT by default (proxy handshake is not a browser-level HTTP request)
+        if flow.request.method == "CONNECT" and not self.include_connect_flows:
             return
             
         # Filter out Firefox/Mozilla background requests.

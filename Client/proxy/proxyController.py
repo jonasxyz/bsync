@@ -67,6 +67,9 @@ class SaveHarCustom:
         # Internal state for managing the HAR save path, independent of mitmproxy's options.
         self.save_path = ""
 
+        # If false, omit bodies (request/response) and websocket payloads from HAR
+        self.include_payload: bool = False
+
     @command.command("save.har")
     def export_har(self) -> None:
         """
@@ -91,6 +94,7 @@ class SaveHarCustom:
         send_ipc_message("har_export_started", {
             "flows_count": flows_before_clear,
             "save_path": self.save_path,
+            "include_payload": self.include_payload,
             "message": "Flows copied and live list cleared for export."
         })
         # Provide a quick sample of what we are about to export for debugging purposes
@@ -123,6 +127,7 @@ class SaveHarCustom:
                 "file_path": self.save_path,
                 "file_size": len(har),
                 "flows_exported": flows_before_clear,
+                "include_payload": self.include_payload,
                 "flows_remaining_in_proxy": len(self.flows_by_id) # Should always be 0
             })
         except Exception as e:
@@ -225,7 +230,7 @@ class SaveHarCustom:
                 "creator": {
                     "name": "mitmproxy",
                     "version": version.VERSION,
-                    "comment": "",
+                    "comment": f"bsync mitmproxy HAR export; payload={'on' if self.include_payload else 'off'}",
                 },
                 "pages": [],
                 "entries": entries,
@@ -449,15 +454,16 @@ class SaveHarCustom:
                 "headersSize": len(str(flow.response.headers)),
                 "bodySize": response_body_size,
             }
-            if content and strutils.is_mostly_bin(content):
-                response["content"]["text"] = base64.b64encode(content).decode()
-                response["content"]["encoding"] = "base64"
-            else:
-                text_content = flow.response.get_text(strict=False)
-                if text_content is None:
-                    response["content"]["text"] = ""
+            if self.include_payload:
+                if content and strutils.is_mostly_bin(content):
+                    response["content"]["text"] = base64.b64encode(content).decode()
+                    response["content"]["encoding"] = "base64"
                 else:
-                    response["content"]["text"] = text_content
+                    text_content = flow.response.get_text(strict=False)
+                    if text_content is None:
+                        response["content"]["text"] = ""
+                    else:
+                        response["content"]["text"] = text_content
         else:
             response = {
                 "status": 0,
@@ -508,7 +514,7 @@ class SaveHarCustom:
             "timings": timings,
         }
 
-        if flow.request.method in ["POST", "PUT", "PATCH"]:
+        if self.include_payload and flow.request.method in ["POST", "PUT", "PATCH"]:
             params = self.format_multidict(flow.request.urlencoded_form)
             entry["request"]["postData"] = {
                 "mimeType": flow.request.headers.get("Content-Type", ""),
@@ -519,23 +525,23 @@ class SaveHarCustom:
         if flow.server_conn.peername:
             entry["serverIPAddress"] = str(flow.server_conn.peername[0])
 
-        websocket_messages = []
         if flow.websocket:
-            for message in flow.websocket.messages:
-                if message.is_text:
-                    data = message.text
-                else:
-                    data = base64.b64encode(message.content).decode()
-                websocket_message = {
-                    "type": "send" if message.from_client else "receive",
-                    "time": message.timestamp,
-                    "opcode": message.type.value,
-                    "data": data,
-                }
-                websocket_messages.append(websocket_message)
-
             entry["_resourceType"] = "websocket"
-            entry["_webSocketMessages"] = websocket_messages
+            if self.include_payload:
+                websocket_messages = []
+                for message in flow.websocket.messages:
+                    if message.is_text:
+                        data = message.text
+                    else:
+                        data = base64.b64encode(message.content).decode()
+                    websocket_message = {
+                        "type": "send" if message.from_client else "receive",
+                        "time": message.timestamp,
+                        "opcode": message.type.value,
+                        "data": data,
+                    }
+                    websocket_messages.append(websocket_message)
+                entry["_webSocketMessages"] = websocket_messages
         return entry
 
     def format_response_cookies(self, response: http.Response) -> list[dict]:

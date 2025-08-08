@@ -54,6 +54,10 @@ def send_ipc_message(message_type: str, data: dict = None, debug_msg: str = None
 class SaveHarCustom:
     def __init__(self) -> None:
         self.flows: list[flow.Flow] = []
+        # Keep a single canonical entry per mitmproxy flow using its id.
+        # This lets us record request-only flows early and later enrich them
+        # when a response or error occurs, without creating duplicates.
+        self.flows_by_id: dict[str, flow.Flow] = {}
         self.filt: flowfilter.TFilter | None = None
         
         # Counter for requests in current iteration
@@ -71,13 +75,14 @@ class SaveHarCustom:
         to prevent data from one iteration leaking into the next.
         The export then proceeds on the copy.
         """
-        # We operate on a copy of self.flows.
-        flows_to_export = list(self.flows)
+        # We operate on a copy of the canonical flow map.
+        flows_to_export = list(self.flows_by_id.values())
         flows_before_clear = len(flows_to_export)
 
         # IMPORTANT: Clear the instance's flow list immediately.
         # This is the critical step to ensure isolation between crawl iterations.
         self.flows = []
+        self.flows_by_id = {}
         self.request_count = 0
         # The iteration is not active until the next request comes in.
         # It's set to active in the _save_flow method.
@@ -88,6 +93,19 @@ class SaveHarCustom:
             "save_path": self.save_path,
             "message": "Flows copied and live list cleared for export."
         })
+        # Provide a quick sample of what we are about to export for debugging purposes
+        if PROXY_DEBUG:
+            sample = [
+                {
+                    "id": f.id,
+                    "method": f.request.method if f.request else None,
+                    "url": f.request.pretty_url if f.request else None,
+                    "has_response": bool(getattr(f, "response", None)),
+                    "has_error": bool(getattr(f, "error", None)),
+                }
+                for f in flows_to_export[:5]
+            ]
+            send_ipc_message("har_export_sample", {"sample": sample, "sample_size": len(sample)})
 
         try:
             har = json.dumps(self.make_har(flows_to_export), indent=4).encode()
@@ -105,7 +123,7 @@ class SaveHarCustom:
                 "file_path": self.save_path,
                 "file_size": len(har),
                 "flows_exported": flows_before_clear,
-                "flows_remaining_in_proxy": len(self.flows) # Should always be 0
+                "flows_remaining_in_proxy": len(self.flows_by_id) # Should always be 0
             })
         except Exception as e:
             # The flow list is already cleared, but we should log the export error.
@@ -122,27 +140,28 @@ class SaveHarCustom:
         if flow.request.pretty_url == "http://shutdown.proxy.local/":
             send_ipc_message("proxy_shutdown_requested", {
                 "message": "Graceful shutdown requested via HTTP",
-                "flows_count": len(self.flows)
+                "flows_count": len(self.flows_by_id)
             })
             
             # Perform cleanup before shutdown
-            if self.flows:
+            if self.flows_by_id:
                 send_ipc_message("debug", {
-                    "message": f"Clearing {len(self.flows)} flows before shutdown"
+                    "message": f"Clearing {len(self.flows_by_id)} flows before shutdown"
                 })
                 self.flows = []
+                self.flows_by_id = {}
             
             # Shutdown the proxy
             ctx.master.shutdown()
             send_ipc_message("proxy_shutdown_requested", {
                 "message": "Graceful shutdown tried via HTTP",
-                "flows_count": len(self.flows)
+                "flows_count": len(self.flows_by_id)
             })
             return
 
         """Handle hardump request via HTTP"""
         if flow.request.pretty_url == "http://harddump.proxy.local/":
-            send_ipc_message("hardump_requested", {"flows_count": len(self.flows)})
+            send_ipc_message("hardump_requested", {"flows_count": len(self.flows_by_id)})
             if self.save_path:
                 try:
                     self.export_har()
@@ -168,15 +187,21 @@ class SaveHarCustom:
         
         # Clear HAR flows
         if flow.request.pretty_url == "http://clearflows.proxy.local/":
-            flows_before_clear = len(self.flows)
+            flows_before_clear = len(self.flows_by_id)
             self.flows = []
+            self.flows_by_id = {}
             send_ipc_message("flows_cleared", {
                 "flows_before_clear": flows_before_clear,
-                "flows_after_clear": len(self.flows)
+                "flows_after_clear": len(self.flows_by_id)
             })
 
         if flow.request.pretty_url == "http://getharflows.proxy.local/":
-            send_ipc_message("har_flows_info", {"flows_count": len(self.flows)})
+            send_ipc_message("har_flows_info", {"flows_count": len(self.flows_by_id)})
+
+        # Record the flow as early as possible so that request-only flows
+        # (e.g., timeouts/aborts without a response) are included in the HAR.
+        # _save_flow will no-op for control URLs under .proxy.local.
+        self._save_flow(flow)
 
     def make_har(self, flows: Sequence[flow.Flow]) -> dict:
         entries = []
@@ -254,6 +279,29 @@ class SaveHarCustom:
     def websocket_end(self, flow: http.HTTPFlow) -> None:
         self._save_flow(flow)
 
+    # Capture flows as early as possible so aborted/timeout requests are included.
+    def requestheaders(self, flow: http.HTTPFlow) -> None:
+        self._save_flow(flow)
+
+    def responseheaders(self, flow: http.HTTPFlow) -> None:
+        self._save_flow(flow)
+
+    # Include CONNECT requests (TLS tunnel setup). If TLS fails later, we still
+    # retain a record for the attempted connection.
+    def http_connect(self, flow: http.HTTPFlow) -> None:
+        self._save_flow(flow)
+
+    # Also record on disconnect events, which may occur without a proper error.
+    def clientdisconnect(self, layer) -> None:  # layer carries .flow for HTTP layers
+        f = getattr(layer, "flow", None)
+        if isinstance(f, http.HTTPFlow):
+            self._save_flow(f)
+
+    def serverdisconnect(self, layer) -> None:
+        f = getattr(layer, "flow", None)
+        if isinstance(f, http.HTTPFlow):
+            self._save_flow(f)
+
     def _save_flow(self, flow: http.HTTPFlow) -> None:
         # Skip requests to *.proxy.local domains which are used for HTTP control
         if ".proxy.local" in flow.request.pretty_url:
@@ -277,7 +325,34 @@ class SaveHarCustom:
             
         flow_matches = self.filt is None or self.filt(flow)
         if flow_matches:
-            self.flows.append(flow)
+            # Canonicalize by flow.id to avoid duplicates across request/response/error hooks
+            existed = flow.id in self.flows_by_id
+            previous = self.flows_by_id.get(flow.id)
+            self.flows_by_id[flow.id] = flow
+
+            if PROXY_DEBUG:
+                if not existed:
+                    send_ipc_message("flow_recorded", {
+                        "id": flow.id,
+                        "method": flow.request.method,
+                        "url": flow.request.pretty_url,
+                        "has_response": bool(flow.response),
+                        "has_error": bool(flow.error),
+                        "stored_count": len(self.flows_by_id),
+                    })
+                else:
+                    # Report if a response or error appeared later
+                    prev_has_resp = bool(previous and previous.response)
+                    prev_has_err = bool(previous and previous.error)
+                    if (not prev_has_resp and bool(flow.response)) or (not prev_has_err and bool(flow.error)):
+                        send_ipc_message("flow_updated", {
+                            "id": flow.id,
+                            "method": flow.request.method,
+                            "url": flow.request.pretty_url,
+                            "has_response": bool(flow.response),
+                            "has_error": bool(flow.error),
+                            "stored_count": len(self.flows_by_id),
+                        })
             
             # Check if this is the first request of the iteration
             if self.iteration_active and self.request_count == 0:
@@ -401,7 +476,8 @@ class SaveHarCustom:
                 response["_error"] = flow.error.msg
 
         if flow.request.method == "CONNECT":
-            url = f"https://{flow.request.pretty_url}/"
+            # Store CONNECT target without explicit port
+            url = f"https://{flow.request.host}/"
         else:
             url = flow.request.pretty_url
 

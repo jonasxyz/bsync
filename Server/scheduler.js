@@ -728,9 +728,10 @@ io.on("connection", socket => {
                 initiate_crawler();
             }
             if (operation === "crawl" && isAnswered === false) {
-                initiate_crawler();
+                // Ensure normal crawl starts without a calibration step
                 calibrationDone = true;
                 initCalibrationDone = true;
+                initiate_crawler();
                 console.log("No Calibration (skipped confirmation)");
             }
             isAnswered = true;
@@ -746,10 +747,11 @@ io.on("connection", socket => {
                 }
     
                 if (operation === "crawl" && isAnswered === false) {
-                    //sendUrl(false);
-                    initiate_crawler(); // 03
+                    // Ensure normal crawl starts without a calibration step
                     calibrationDone = true; // vmedit skipcalibration
                     initCalibrationDone = true;
+                    //sendUrl(false);
+                    initiate_crawler(); // 03
                     console.log("No Calibration (skipped confirmation)");
                 }
                 isAnswered = true; // avoid buffered interface questions when client loses connection while question is active

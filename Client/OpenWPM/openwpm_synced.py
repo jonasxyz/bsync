@@ -17,9 +17,11 @@ import time
 import os
 from hashlib import md5
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Optional
 from time import sleep
 import atexit
+import re
+from urllib.parse import urlparse, unquote
 
 from openwpm.command_sequence import CommandSequence
 from openwpm.commands.browser_commands import GetCommand, SaveScreenshotCommand as OriginalSaveScreenshotCommand
@@ -55,12 +57,14 @@ VISIT_PAGE_TIMEOUT = 10 # Default: 30
 class CustomSaveScreenshotCommand(OriginalSaveScreenshotCommand):
     """A custom command to save a screenshot to a specific path, overriding the default."""
     
-    def __init__(self, path: Path, suffix: str = ""):
+    def __init__(self, path: Path, suffix: str = "", url_label: Optional[str] = None, url_index: Optional[int] = None):
         super().__init__(suffix)
         self.path = path
+        self.url_label = url_label
+        self.url_index = url_index
     
     def __repr__(self):
-        return f"CustomSaveScreenshotCommand(path='{self.path}', suffix='{self.suffix}')"
+        return f"CustomSaveScreenshotCommand(path='{self.path}', suffix='{self.suffix}', url_label='{self.url_label}', url_index='{self.url_index}')"
     
     def execute(self, webdriver, browser_params, manager_params, extension_socket):
         """Saves a screenshot to the specified path."""
@@ -70,13 +74,39 @@ class CustomSaveScreenshotCommand(OriginalSaveScreenshotCommand):
             suffix_str = ""
             
         try:
-            urlhash = md5(webdriver.current_url.encode("utf-8")).hexdigest()
+            current_url = self.url_label or webdriver.current_url or "about:blank"
+            # Create a readable and filesystem-safe label from the URL
+            def _sanitize_for_filename(text: str, max_length: int = 150) -> str:
+                parsed = urlparse(text)
+                # Build label from host + path + optional query
+                base = parsed.netloc + parsed.path
+                if parsed.query:
+                    base += "_" + parsed.query
+                # Decode percent-encodings to be more human-readable
+                base = unquote(base)
+                # Replace disallowed characters with underscore
+                safe = re.sub(r"[^A-Za-z0-9._-]", "_", base)
+                # Collapse multiple underscores
+                safe = re.sub(r"_+", "_", safe).strip("_")
+                # Avoid empty filenames
+                if not safe:
+                    safe = "url"
+                # Trim to reasonable length
+                if len(safe) > max_length:
+                    safe = safe[:max_length]
+                return safe
+            url_label = _sanitize_for_filename(current_url)
             
             # Ensure the directory exists
             self.path.mkdir(parents=True, exist_ok=True)
             
             # Construct the output file name
-            outname = self.path / f"{self.visit_id}-{urlhash}{suffix_str}.png"
+            if self.url_index is not None:
+                # Use the provided URL index (1-based from scheduler)
+                outname = self.path / f"{int(self.url_index):03d}-{url_label}{suffix_str}.png"
+            else:
+                # Fallback without index
+                outname = self.path / f"{url_label}{suffix_str}.png"
             
             # Save the screenshot
             webdriver.save_screenshot(str(outname))
@@ -367,7 +397,7 @@ class OpenWPMCrawler:
         
         return all_ready
     
-    def _visit_url(self, url, wait_time=0, visit_duration=3):
+    def _visit_url(self, url, wait_time=0, visit_duration=3, url_label: Optional[str] = None, url_index: Optional[int] = None):
         """Visits a URL with specified parameters."""
 
         self.crawling_in_progress = True # Set the flag to indicate a crawl is running
@@ -428,7 +458,7 @@ class OpenWPMCrawler:
         if self.args.screenshotpath:
             screenshot_path = Path(self.args.screenshotpath)
             command_sequence.append_command(
-                CustomSaveScreenshotCommand(path=screenshot_path, suffix="final"), 
+                CustomSaveScreenshotCommand(path=screenshot_path, suffix="final", url_label=url_label or url, url_index=url_index), 
                 timeout=30
             )
             log_message(f"Screenshot command added for path: {screenshot_path}")
@@ -484,13 +514,16 @@ class OpenWPMCrawler:
         url = data.get("url")
         wait_time = data.get("waitingTime", 0)
         visit_duration = data.get("visitDuration", 3)
+        clear_url = data.get("clearUrl")
+        url_index = data.get("urlIndex")
         
         if not url:
             log_message("No valid URL in visit_url command", "ERROR")
             return
         
-        log_message(f"visit_url signal received: {url}, waiting time: {wait_time}, visit duration: {visit_duration}")
-        self._visit_url(url, wait_time, visit_duration)
+        log_message(f"visit_url signal received: {url}, waiting time: {wait_time}, visit duration: {visit_duration}, clearUrl: {clear_url}, urlIndex: {url_index}")
+        # Use clear_url for naming (human-readable original URL); fall back to url
+        self._visit_url(url, wait_time, visit_duration, url_label=clear_url or url, url_index=url_index)
     
     def _process_stdin_command(self, line):
         """Processes a single stdin command."""

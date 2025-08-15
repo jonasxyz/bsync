@@ -1076,23 +1076,26 @@ async function calibration(){
             console.log("CAUTION: doneArray is empty");
         }
 
-        console.log("requestArray");
-        console.log(arrayClients[i]);
-        console.log("doneArray");
-        console.log(arrayClients[i].doneArray);
-        // calculate average time gathered from the calibibration between sending url to receiving the http request
-        if (arrayClients[i].requestArray.length > 0) {
-            arrayClients[i].avgDelay = Math.round(arrayClients[i].requestArray.reduce((a, b) => (a + b)) / arrayClients[i].requestArray.length);
+        // calculate average time gathered from the calibration between sending url to receiving the http request
+        // Ignore undefined/non-numeric entries and the first iteration (warm-up) if possible
+        const reqValuesAll = (arrayClients[i].requestArray || []).filter(v => typeof v === 'number' && !isNaN(v));
+        const reqValues = reqValuesAll.length > 1 ? reqValuesAll.slice(1) : reqValuesAll;
+        if (reqValues.length > 0) {
+            const sumReq = reqValues.reduce((a, b) => a + b, 0);
+            arrayClients[i].avgDelay = Math.round(sumReq / reqValues.length);
         } else {
-            console.log("WARNING: requestArray is empty for client", arrayClients[i].workerName);
+            console.log("WARNING: requestArray empty or non-numeric for client", arrayClients[i].workerName);
             arrayClients[i].avgDelay = 0;
         }
 
-        // calculate average time between sending url and done signal
-        if (arrayClients[i].doneArray.length > 0) {
-            arrayClients[i].avgDone = Math.round(arrayClients[i].doneArray.reduce((a, b) => (a + b)) / arrayClients[i].doneArray.length);
+        // calculate average time between sending url and done signal (URL_DONE)
+        const doneValuesAll = (arrayClients[i].doneArray || []).filter(v => typeof v === 'number' && !isNaN(v));
+        const doneValues = doneValuesAll.length > 1 ? doneValuesAll.slice(1) : doneValuesAll;
+        if (doneValues.length > 0) {
+            const sumDone = doneValues.reduce((a, b) => a + b, 0);
+            arrayClients[i].avgDone = Math.round(sumDone / doneValues.length);
         } else {
-            console.log("WARNING: doneArray is empty for client", arrayClients[i].workerName);
+            console.log("WARNING: doneArray empty or non-numeric for client", arrayClients[i].workerName);
             arrayClients[i].avgDone = 0;
         }
 
@@ -1105,6 +1108,11 @@ async function calibration(){
 
         // Calculate the difference between each worker to the slowest
         let timeToLast = arrayClients[arrayClients.length - 1].avgDelay - arrayClients[i].avgDelay;
+        // Sanity clamp: waiting time must not be negative
+        if (timeToLast < 0) {
+            console.log("WARNING: negative waitMs computed for", arrayClients[i].workerName, "clamping to 0 (was:", timeToLast, ")");
+            timeToLast = 0;
+        }
         arrayClients[i].waitMs = timeToLast;
 
         // Distribute the calculated time to wait before each website access to the clients
@@ -1118,6 +1126,27 @@ async function calibration(){
 
         console.log("\x1b[33mSTATUS: \x1b[0m" + arrayClients[i].workerName + " average offset from request to urldone signal " + offsetToDone + " ms");
         
+    }
+
+    // Post-calibration overview: console only (no file export)
+    const summaryRows = arrayClients.map(c => ({
+        workerName: c.workerName,
+        avgDelay_ms: c.avgDelay,
+        avgDone_ms: c.avgDone,
+        waitMs_ms: c.waitMs,
+        offsetDone_ms: c.offsetDone
+    }));
+
+    console.log("Calibration summary (per worker):");
+    console.table(summaryRows);
+
+    const fastest = arrayClients.length > 0 ? arrayClients[0].avgDelay : 0;
+    const slowest = arrayClients.length > 0 ? arrayClients[arrayClients.length - 1].avgDelay : 0;
+    const spread = slowest - fastest;
+    console.log("INFO: Calibration spread (slowest-fastest):", spread, "ms. Fastest:", fastest, "ms, Slowest:", slowest, "ms");
+
+    if (arrayClients.length > 0 && arrayClients[arrayClients.length - 1].waitMs !== 0) {
+        console.log("WARNING: slowest worker has non-zero waitMs:", arrayClients[arrayClients.length - 1].waitMs);
     }
 
     calibrationDone = true;

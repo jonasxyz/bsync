@@ -41,11 +41,14 @@ SCREEN_WIDTH = 800   # Default: 1366
 SCREEN_HEIGHT = 600   # Default: 768
 
 # Page Load Timeout for webdriver in seconds  
-PAGE_LOAD_TIMEOUT = 30  # Default: 30
+PAGE_LOAD_TIMEOUT = 10  # Default: 30
 # If setting the webdriver timeout lower than the page load timeout, sites that timeout wont be counted as timeouts
 
+
+# command_sequence.py InitializeCommand and FinalizeCommand timeout is set to 10 seconds, so we need to set the page load timeout less than 10 seconds
+
 # Timeout for OpenWPM GetCommand that visits a page in seconds
-VISIT_PAGE_TIMEOUT = 30 # Default: 30
+VISIT_PAGE_TIMEOUT = 10 # Default: 30
 # ========================
 
 
@@ -106,6 +109,7 @@ class WaitForDoneCommand(BaseCommand):
             # URL_DONE signal is now sent here when the website is actually finished
             if self.url:
                 sys.stdout.write(f"URL_DONE: {self.url}\n")
+                #self.url = None  # Reset URL to prevent reuse on error
             else:
                 sys.stdout.write("URL_DONE\n")
             sys.stdout.flush()
@@ -119,6 +123,7 @@ class WaitForDoneCommand(BaseCommand):
             # Send URL_DONE so that the crawler can continue
             if self.url:
                 sys.stdout.write(f"URL_DONE: {self.url}\n")
+                # self.url = None  # Reset URL to prevent reuse on error
             else:
                 sys.stdout.write("URL_DONE\n")
             sys.stdout.flush()
@@ -217,10 +222,10 @@ class OpenWPMCrawler:
         """Configures a single browser parameter."""
         # Disable OpenWPM instrumentation
         browser_param.http_instrument = True
-        browser_param.cookie_instrument = False
-        browser_param.navigation_instrument = False
-        browser_param.js_instrument = False
-        browser_param.dns_instrument = False
+        browser_param.cookie_instrument = True
+        browser_param.navigation_instrument = True
+        browser_param.js_instrument = True
+        browser_param.dns_instrument = True
         
         # Limit profile size
         browser_param.maximum_profile_size = 50 * (10**20)  # 50 MB
@@ -273,9 +278,19 @@ class OpenWPMCrawler:
         if self.args.proxyhost and self.args.proxyport:
             self._configure_proxy(browser_param)
         
-        # Disable cache
-        browser_param.prefs["browser.cache.disk.enable"] = False
-        browser_param.prefs["browser.cache.memory.enable"] = False
+        # Toggle cache (default: disabled)
+        if getattr(self.args, "enable_cache", False):
+            browser_param.prefs["browser.cache.disk.enable"] = True
+            browser_param.prefs["browser.cache.memory.enable"] = True
+            # Offline/Application cache
+            browser_param.prefs["browser.cache.offline.enable"] = True
+            log_message("Firefox cache enabled (disk, memory, offline)")
+        else:
+            browser_param.prefs["browser.cache.disk.enable"] = False
+            browser_param.prefs["browser.cache.memory.enable"] = False
+            # Offline/Application cache
+            browser_param.prefs["browser.cache.offline.enable"] = False
+            log_message("Firefox cache disabled (disk, memory, offline)")
         
         log_message(f"Browser parameters configured - Resolution: {self.screen_width}x{self.screen_height}, Page load timeout: {self.page_load_timeout}s")
     
@@ -291,6 +306,10 @@ class OpenWPMCrawler:
         browser_param.prefs["network.proxy.socks_version"] = 5
         browser_param.prefs["network.proxy.socks_remote_dns"] = True
         browser_param.prefs["network.proxy.share_proxy_settings"] = True
+
+        # By default, Firefox bypasses the proxy for localhost.
+        # Clear the `no_proxies_on` setting to capture all traffic.
+        browser_param.prefs["network.proxy.no_proxies_on"] = ""
         
         log_message(f"Proxy configured: {self.args.proxyhost}:{self.args.proxyport}")
     
@@ -370,8 +389,8 @@ class OpenWPMCrawler:
 
                 # URL_DONE is no longer sent here.
                 # It is now sent by WaitForDoneCommand to ensure accurate timing.
-                # sys.stdout.write(f"URL_DONE {url}\n")
-                # sys.stdout.flush()
+                sys.stdout.write(f"URL_DONE {url}\n")
+                sys.stdout.flush()
             else:
                 if error_info:
                     error_type = error_info.get("error_type", "unknown")
@@ -399,11 +418,11 @@ class OpenWPMCrawler:
         )
         
         # Add GetCommand
-        # command_sequence.append_command(
-        #    GetCommand(url=url, sleep=visit_duration), 
-        #    timeout=VISIT_PAGE_TIMEOUT
-                
-        command_sequence.get(sleep=visit_duration, timeout=VISIT_PAGE_TIMEOUT)
+        command_sequence.append_command(
+           GetCommand(url=url, sleep=visit_duration), 
+           timeout=VISIT_PAGE_TIMEOUT
+        )
+        #command_sequence.get(sleep=visit_duration, timeout=VISIT_PAGE_TIMEOUT)
 
         # Add screenshot command if path is provided
         if self.args.screenshotpath:
@@ -415,11 +434,11 @@ class OpenWPMCrawler:
             log_message(f"Screenshot command added for path: {screenshot_path}")
 
         # Append WaitForDoneCommand to command sequence to signal when the page was loaded
-        # Re-enabled for better accuracy, with improved stability.
-        command_sequence.append_command(
-            WaitForDoneCommand(url=url, timeout=self.page_load_timeout - 2, additional_wait=0), 
-            timeout=self.page_load_timeout # Use the full page load timeout
-        )
+        
+        # command_sequence.append_command(
+        #     WaitForDoneCommand(url=url, timeout=self.page_load_timeout - 2, additional_wait=0), 
+        #     timeout=self.page_load_timeout # Use the full page load timeout
+        # )
         
         log_message(f"Visiting URL: {url}")
         
@@ -554,6 +573,8 @@ def main():
                         help="Full path for the OpenWPM log file.")
     parser.add_argument("--screenshotpath", type=str, default=None,
                         help="Path to save screenshots.")
+    parser.add_argument("--enable_cache", action="store_true", default=False,
+                        help="Enable Firefox cache (disk and memory, incl. offline). Disabled by default.")
     
     args = parser.parse_args()
     crawler = OpenWPMCrawler(args)

@@ -80,18 +80,19 @@ if false; then
 
 fi
 
-MITMPROXY_CA_CERT_USER_PATH="$HOME/.mitmproxy/mitmproxy-ca-cert.pem"
-SYSTEM_CA_CERT_PATH="/usr/local/share/ca-certificates/" 
-#SYSTEM_CA_CERT_PATH="/usr/local/share/ca-certificates/mitmproxy-ca-cert.crt" # Todo check .crt is more common for update-ca-certificates
 
-# Add mitmproxy CA certificate to system trust store
+MITMPROXY_CA_CERT_USER_PATH="$HOME/.mitmproxy/mitmproxy-ca-cert.pem"
+SYSTEM_CA_DIR="/usr/local/share/ca-certificates"
+
 if [ -f "$MITMPROXY_CA_CERT_USER_PATH" ]; then
-    echo "Adding mitmproxy CA certificate to system trust store..."
-    sudo cp "$MITMPROXY_CA_CERT_USER_PATH" "$SYSTEM_CA_CERT_PATH"
-    sudo update-ca-certificates
-    echo "mitmproxy CA certificate added and trust store updated."
+  echo "Adding mitmproxy CA to the system trust store..."
+  sudo install -m 0644 -D "$MITMPROXY_CA_CERT_USER_PATH" \
+    "$SYSTEM_CA_DIR/mitmproxy-ca-cert.crt"   # <- .crt Endung!
+  sudo update-ca-certificates
+  # Kontrolle: sollte "1 added" o.ä. melden
+  ls -l /etc/ssl/certs/*mitmproxy* || true
 else
-    echo "ERROR: mitmproxy CA certificate ($MITMPROXY_CA_CERT_USER_PATH) not found. Certificate installation failed."
+  echo "ERROR: mitmproxy CA ($MITMPROXY_CA_CERT_USER_PATH) not found."
 fi
 
 mitmproxy --version # For verification

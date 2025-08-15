@@ -161,10 +161,8 @@ socket.on("start_capturer", async (jobData) => {
     }
   }
 
-  // Create parameters for each URL, including the index
-  const iterationConfig = createUrlIterationConfig(jobData);
-
-  spawnedScripts.sendVisitUrlCommand(iterationConfig);
+  // First iteration special-case: the scheduler sends CHECK_READY immediately after start_capturer.
+  // We must not start visiting here; actual visit happens strictly on "visit_url".
 });
 
 socket.on("CHECK_READY", async (jobData) => {

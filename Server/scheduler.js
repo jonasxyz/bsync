@@ -91,6 +91,8 @@ var timeUrlSent;
 var timeAllBrowsersReady;
 var fastestReady;
 var slowestReady;
+var timeCheckReadySent; // Timestamp when CHECK_READY was sent
+var currentReadyWorkers = new Set(); // Track which workers have reported ready for the current CHECK_READY
 
 var browserReadyCountdown;
 var browserDoneCountdown;
@@ -158,7 +160,14 @@ io.on("connection", socket => {
         logFunctions.logConnect(clientname, new Date().toISOString());
 
         // Create individual subpages for each client to track their access timing on the scheduler webserver in calibration and test runs
-        serverFunctions.createClientSubpages(socket.id, calibrationDone, arrayClients, arrayStatistics, timeUrlSent, timeAllBrowsersReady);
+        serverFunctions.createClientSubpages(
+            socket.id,
+            () => calibrationDone,
+            arrayClients,
+            arrayStatistics,
+            () => timeUrlSent,
+            () => timeAllBrowsersReady
+        );
 
 
         // Storing connected clients and data for each URL-Iteration while crawling 
@@ -218,6 +227,7 @@ io.on("connection", socket => {
             io.to(socket.id).emit("start_capturer", currentJobData);
 
             // Send check ready to all clients todo somehow check if automation framework is started
+            timeCheckReadySent = Date.now();
             io.sockets.emit("CHECK_READY", { clearUrl: currentJobData.clearUrl, urlIndex: urlsDone + 1 });
         }
     })
@@ -310,6 +320,11 @@ io.on("connection", socket => {
 
         dateUrlDone = Date.now();
 
+        if (!timeUrlSent) {
+            console.log("WARNING: URL_DONE received but no URL was sent yet (timeUrlSent unset). Ignoring.");
+            return;
+        }
+
         let arrayPosition = helperFunctions.searchArray(calibrationDone ? arrayStatistics : arrayClients, socket.data.clientname.toString(), 1);;
         calibrationDone ? (tempArray = arrayStatistics) : (tempArray = arrayClients);
 
@@ -324,6 +339,10 @@ io.on("connection", socket => {
     socket.on("ITERATION_DONE", async (iterationData) => { 
 
         if (activeClients != config.num_clients || ongoingCrawl == false ) return;  //|| awaiting != "browserfinished"
+        if (pendingJobs <= 0) {
+            console.log("WARNING: ITERATION_DONE received but no iteration is pending. Ignoring.");
+            return;
+        }
         // removed || browsersReady != config.num_clients // vmedit 17:21 23-07-24 auch 21:38 25-07-24
 
         pendingJobs -= 1;
@@ -529,6 +548,8 @@ io.on("connection", socket => {
             // Get the next URL and its index
             currentJobData = retrieveUrl();
 
+            timeCheckReadySent = Date.now();
+            currentReadyWorkers.clear();
             io.sockets.emit("CHECK_READY", currentJobData);
             helperFunctions.logMessage("status", "CHECK_READY sent to all workers for URL: " + currentJobData.clearUrl + " (Index: " + (currentJobData.urlIndex) + ")");
 
@@ -541,9 +562,14 @@ io.on("connection", socket => {
         //console.log("browser_ready triggered"); // debug
         if (activeClients != config.num_clients || ongoingCrawl == false) return;
 
+        if (!timeCheckReadySent) {
+            console.log("WARNING: browser_ready received before CHECK_READY was sent. Ignoring.");
+            return;
+        }
+
         let tempName = socket.data.clientname.toString();
 
-        timeBrowserReady = (Date.now() - timeUrlSent);
+        timeBrowserReady = (Date.now() - timeCheckReadySent);
 
         if (browsersReady == 0) fastestReady = timeBrowserReady;
         if (browsersReady == config.num_clients - 1) slowestReady = timeBrowserReady;
@@ -554,19 +580,26 @@ io.on("connection", socket => {
         // Search arrays for right worker and push time it took for browser to start in the array
         let arrayPosition = helperFunctions.searchArray(tempArray, tempName, 1);
 
-        // Check if the browser ready signal is unique
+        // Ensure only one ready per worker per CHECK_READY window
+        if (currentReadyWorkers.has(tempName)) {
+            helperFunctions.logMessage("debug", "Duplicate browser_ready ignored for " + tempName);
+            console.log("\x1b[33mSTATUS: \x1b[0m" + browsersReady + "/" + config.num_clients + " " + data + "'s browser ready (duplicate ignored)");
+            return;
+        }
+
+        // Check if the browser ready signal is unique for the iteration tracking arrays
         if (tempArray[arrayPosition].readyArray.length == iterations) {  // changed
             tempArray[arrayPosition].readyArray.push(timeBrowserReady);
 
             browsersReady += 1;
             console.log("\x1b[33mSTATUS: \x1b[0m" + browsersReady + "/" + config.num_clients + " " + data + "'s browser ready");
+            currentReadyWorkers.add(tempName);
 
         } else {
-
-            tempArray[arrayPosition].readyArray.splice(iterations, 0, timeBrowserReady); 19.11
-
-            helperFunctions.logMessage("debug", "Overwriting ready status");
-            console.log("\x1b[33mSTATUS: \x1b[0m" + browsersReady + "/" + config.num_clients + " " + data + "'s browser ready");
+            // If array length mismatches expected iteration index, treat as duplicate for safety
+            helperFunctions.logMessage("debug", "Overwriting ready status suppressed - treating as duplicate");
+            console.log("\x1b[33mSTATUS: \x1b[0m" + browsersReady + "/" + config.num_clients + " " + data + "'s browser ready (suppressed overwrite)");
+            if (!currentReadyWorkers.has(tempName)) currentReadyWorkers.add(tempName);
         }
 
         if (browsersReady == config.num_clients) { // If all workers signalized that their browser is ready
@@ -620,7 +653,12 @@ io.on("connection", socket => {
 
         //console.log("calibration", calibrationDone, "initcal", initCalibrationDone); // DEBUG
 
-        // Start capturer if requested
+        // Open readiness window and notify clients for the first iteration immediately
+        timeCheckReadySent = Date.now();
+        timeUrlSent = null; // not in visiting phase yet
+        io.sockets.emit("CHECK_READY", { clearUrl: currentJobData.clearUrl, urlIndex: currentJobData.urlIndex });
+
+        // Start capturer if requested (first iteration needs this before visit)
         console.log("start_capturer for job (url/index only):", { clearUrl: currentJobData.clearUrl, urlIndex: currentJobData.urlIndex });
         if (start_capturer) io.sockets.emit("start_capturer", { clearUrl: currentJobData.clearUrl, urlIndex: currentJobData.urlIndex });
     }
@@ -675,9 +713,9 @@ io.on("connection", socket => {
 
         arrayStatistics.forEach(element => {
             //console.log(element.readyArray.length +" kleiner" + testsDone) // debug
-            if(element.readyArray.length = 0){
+            if (element.readyArray.length === 0) {
                 console.log("WARNING: sendUrl called but not all browsers have ready values. Ready browsers: " + browsersReady + "/" + config.num_clients);
-                return;
+                // Note: return inside forEach only exits the callback; we only warn here.
             }
         });
 
@@ -689,6 +727,7 @@ io.on("connection", socket => {
         pendingJobs = 0;
         pendingRequests = 0;
         browsersReady = 0; // 03 glaub doch hier
+        currentReadyWorkers.clear();
 
         // if(urlsDone != 0){
         //     retrieveUrl();

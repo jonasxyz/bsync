@@ -72,6 +72,10 @@ class SaveHarCustom:
         # If true, include CONNECT tunnel handshakes as HAR entries (not browser-visible HTTP).
         # Default False to match website/browser-level logging and OpenWPM http_instrument.
         self.include_connect_flows: bool = False
+        # Page metadata for HAR pages
+        self.current_page_url: str | None = None
+        self.current_page_visit_ts: str | None = None  # ISO string
+        self.current_page_index: str | None = None
 
     @command.command("save.har")
     def export_har(self) -> None:
@@ -192,6 +196,22 @@ class SaveHarCustom:
                 self.save_path = har_path
                 send_ipc_message("har_path_set", {"har_path": har_path})
         
+        # Handle page metadata for HAR pages
+        if flow.request.pretty_url == "http://setpage.proxy.local/":
+            page_url = flow.request.headers.get('X-Page-Url', '')
+            visit_ts = flow.request.headers.get('X-Visit-Timestamp', '')
+            url_index = flow.request.headers.get('X-Url-Index', '')
+            if page_url and visit_ts:
+                self.current_page_url = page_url
+                self.current_page_visit_ts = visit_ts
+                self.current_page_index = url_index or None
+                send_ipc_message("page_metadata_set", {
+                    "page_url": self.current_page_url,
+                    "visit_timestamp": self.current_page_visit_ts,
+                    "url_index": self.current_page_index,
+                })
+            return
+
         # Clear HAR flows
         if flow.request.pretty_url == "http://clearflows.proxy.local/":
             flows_before_clear = len(self.flows_by_id)
@@ -226,6 +246,16 @@ class SaveHarCustom:
         if skipped > 0:
             logger.info(f"Skipped {skipped} flows that weren't HTTP flows.")
 
+        # Build pages array if page metadata is available
+        pages: list[dict] = []
+        if self.current_page_url and self.current_page_visit_ts:
+            pages.append({
+                "startedDateTime": self.current_page_visit_ts,
+                "id": self.current_page_url,
+                "title": self.current_page_url,
+                "pageTimings": {}
+            })
+
         return {
             "log": {
                 "version": "1.2",
@@ -234,7 +264,7 @@ class SaveHarCustom:
                     "version": version.VERSION,
                     "comment": f"bsync mitmproxy HAR export; payload={'on' if self.include_payload else 'off'}",
                 },
-                "pages": [],
+                "pages": pages,
                 "entries": entries,
             }
         }

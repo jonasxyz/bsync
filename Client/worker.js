@@ -191,8 +191,8 @@ socket.on("visit_url", async (jobData) => {
     console.error(colorize("ERROR:", "red") + " visit_url signal received without clearUrl or urlIndex in jobData.", jobData);
     return;
   }
-  const { clearUrl, urlIndex } = jobData;
-  console.log(colorize("SOCKETIO:", "cyan") + ` Job received (Signal visit_url) for URL: "${clearUrl}" (Index: ${urlIndex})`);
+  const { clearUrl, urlIndex, visitTimestamp } = jobData;
+  console.log(colorize("SOCKETIO:", "cyan") + ` Job received (Signal visit_url) for URL: "${clearUrl}" (Index: ${urlIndex}) visitTimestamp: ${visitTimestamp || 'n/a'}`);
 
   // Create parameters for each URL, including the index
   const iterationConfig = createUrlIterationConfig(jobData);
@@ -201,7 +201,7 @@ socket.on("visit_url", async (jobData) => {
 });
 
 function createUrlIterationConfig(jobData) { // urlIndex is 1-based
-  const { clearUrl, urlIndex, totalUrls } = jobData;
+  const { clearUrl, urlIndex, totalUrls, visitTimestamp } = jobData;
 
   const config = {
       url: '',
@@ -210,7 +210,8 @@ function createUrlIterationConfig(jobData) { // urlIndex is 1-based
       clearUrl: clearUrl,
       urlIndex: urlIndex, // Already 1-based
       visitDuration: baseConfig.pagevisit_duration,
-      totalUrls: totalUrls
+      totalUrls: totalUrls,
+      visitTimestamp: visitTimestamp || null
   };
   //console.log("createUrlIterationConfig: " + JSON.stringify(config)); // debug
 

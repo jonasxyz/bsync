@@ -149,6 +149,8 @@ module.exports =
                 spawnArgs.push("--browserprofilepath", browserProfileDir);
                 spawnArgs.push("--logfilepath", openWpmLogFile);
 
+                //spawnArgs.push("--page_load_timeout", 30); // todo variable
+
                 if (baseConfig.take_screenshot) {
                     const screenshotDir = path.join(fileSystemUtils.getCrawlDir(), SCREENSHOTS_SUBDIR);
                     spawnArgs.push("--screenshotpath", screenshotDir);
@@ -294,7 +296,7 @@ module.exports =
 
                 // Moved HAR file processing to browser_finished
 
-
+                
                 
             }
             if (data.toString().includes("CRAWLER_ENV_INFO") && !dataGathered) { // todo
@@ -429,6 +431,20 @@ module.exports =
         if (browser && browser.stdin) {
             let jsonSignal = "visit_url" + JSON.stringify(IterationConfig) + "\n";
             browser.stdin.write(jsonSignal);
+            // If proxy is active and a unified visit timestamp is provided, forward it for HAR pages metadata
+            if (worker.enable_proxy && IterationConfig.visitTimestamp) {
+                try {
+                    await axios.get('http://setpage.proxy.local/', {
+                        proxy: { host: worker.proxy_host, port: worker.proxy_port, protocol: 'http' },
+                        headers: {
+                            'X-Page-Url': IterationConfig.clearUrl,
+                            'X-Visit-Timestamp': IterationConfig.visitTimestamp,
+                            'X-Url-Index': String(IterationConfig.urlIndex || '')
+                        },
+                        timeout: 2000
+                    }).catch(() => {});
+                } catch (e) { /* ignore */ }
+            }
         } else {
             console.error("Browser process is not available.");
         }

@@ -703,7 +703,9 @@ io.on("connection", socket => {
         
         // io.sockets.emit("url", tempUrl);  //03 muss zu visit_url werden
         // io.sockets.emit("visit_url", tempUrl); // Old
-        io.sockets.emit("visit_url", currentJobData);
+        // Attach a unified visit timestamp for all clients
+        const visitTimestamp = new Date().toISOString();
+        io.sockets.emit("visit_url", { ...currentJobData, visitTimestamp });
 
         timeUrlSent = Date.now();
         pendingJobs += config.num_clients;

@@ -12,6 +12,7 @@ class HarAnalyzer {
       mediaAnalysisEnabled: false,
       normalizeUrls: false,
       verbose: false, // Default verbose to false
+      includeRequestsInJson: false, // Default to false
       ...options
     };
     
@@ -250,7 +251,8 @@ class HarAnalyzer {
         clientSummary: {},
         overallSummary: {
           totalUrls: 0,
-          totalClients: 0
+          totalClients: 0,
+          crawlDurationMinutes: 0
         }
       };
     }
@@ -261,11 +263,13 @@ class HarAnalyzer {
       clientSummary: results.clients || {},
       overallSummary: results.summary || {
         totalUrls: 0,
-        totalClients: 0
+        totalClients: 0,
+        crawlDurationMinutes: 0
       },
       normalizationEnabled: this.options.normalizeUrls,
       syncStats: { perPair: {}, overall: {} },
-      timingSpreads: { perUrl: {}, perPair: {}, perClient: {}, overall: {} }
+      timingSpreads: { perUrl: {}, perPair: {}, perClient: {}, overall: {} },
+      errorSummary: { byClient: {}, failedUrls: [] }
     };
     
     // Normalisierungsstatistiken aggregieren
@@ -308,6 +312,9 @@ class HarAnalyzer {
     const timingValuesPerClient = {};
     // Sammelbehälter für per-URL Spreads (Start→erste Anfrage)
     const spreadsAll = [];
+    let minCrawlStartTime = Infinity;
+    let maxCrawlEndTime = 0;
+    const urlsWithErrorsByClient = {};
 
     for (const [url, urlData] of Object.entries(results.urls || {})) {
       if (!urlData || !urlData.clients) continue; // Überspringen, wenn keine gültigen Daten
@@ -325,10 +332,28 @@ class HarAnalyzer {
       
       const clients = Object.keys(urlData.clients || {});
 
-      // Per-Client TTFR/Dauer sammeln
+      // Per-Client TTFR/Dauer sammeln und Crawl-Dauer ermitteln
       for (const [client, metrics] of Object.entries(urlData.clients || {})) {
+        if (metrics.totalRequests === 0) {
+            comparison.errorSummary.failedUrls.push({ url, client });
+        }
+        if (metrics.totalErrors > 0) {
+            if (!urlsWithErrorsByClient[client]) {
+                urlsWithErrorsByClient[client] = new Set();
+            }
+            urlsWithErrorsByClient[client].add(url);
+        }
+
         const s = metrics && metrics.sync ? metrics.sync : null;
         if (!s) continue;
+
+        if (s.visitStartMs && s.visitStartMs < minCrawlStartTime) {
+            minCrawlStartTime = s.visitStartMs;
+        }
+        if (s.lastRequestEndMs && s.lastRequestEndMs > maxCrawlEndTime) {
+            maxCrawlEndTime = s.lastRequestEndMs;
+        }
+
         if (!timingValuesPerClient[client]) timingValuesPerClient[client] = { ttfr: [], duration: [] };
         if (typeof s.firstRequestOffsetMs === 'number' && !isNaN(s.firstRequestOffsetMs)) {
           timingValuesPerClient[client].ttfr.push(s.firstRequestOffsetMs);
@@ -528,6 +553,19 @@ class HarAnalyzer {
     // Overall-Stats für Spreads (über alle URLs)
     comparison.timingSpreads.overall = computeStats(spreadsAll);
 
+    // Fehlerzusammenfassung erstellen
+    for (const clientName in results.clients) {
+        comparison.errorSummary.byClient[clientName] = {
+            totalErrors: results.clients[clientName].totalErrors || 0,
+            urlsWithErrors: urlsWithErrorsByClient[clientName] ? urlsWithErrorsByClient[clientName].size : 0,
+        };
+    }
+
+    // Crawl-Dauer berechnen
+    if (isFinite(minCrawlStartTime) && maxCrawlEndTime > 0) {
+        comparison.overallSummary.crawlDurationMinutes = (maxCrawlEndTime - minCrawlStartTime) / (1000 * 60);
+    }
+
     return comparison;
   }
 
@@ -541,7 +579,27 @@ class HarAnalyzer {
     try {
       switch (format.toLowerCase()) {
         case 'json':
-          fs.writeFileSync(outputPath, JSON.stringify(results, null, 2));
+          let dataToWrite = results;
+          // Wenn Request-Listen ausgeschlossen werden sollen, Daten klonen und Listen entfernen
+          if (!this.options.includeRequestsInJson) {
+            dataToWrite = JSON.parse(JSON.stringify(results)); // Tiefe Kopie
+            // Detaillierter Bericht: Request-Listen aus jeder URL/Client-Kombi entfernen
+            if (dataToWrite.urls) {
+              for (const urlData of Object.values(dataToWrite.urls)) {
+                for (const clientMetrics of Object.values(urlData.clients)) {
+                  delete clientMetrics.requestUrls;
+                  delete clientMetrics.normalizedRequestUrls;
+                }
+              }
+            }
+            // Vergleichsbericht: uniqueRequestUrls entfernen
+            if (dataToWrite.urlComparisons) {
+              for (const comparisonData of Object.values(dataToWrite.urlComparisons)) {
+                delete comparisonData.uniqueRequestUrls;
+              }
+            }
+          }
+          fs.writeFileSync(outputPath, JSON.stringify(dataToWrite, null, 2));
           break;
         case 'csv':
           const csv = this._convertToCSV(results);
@@ -897,13 +955,77 @@ class HarAnalyzer {
    * Konvertiert Ergebnisse in CSV-Format
    */
   _convertToCSV(results) {
-    // Einfache Implementierung für Client-Vergleich
-    let csv = 'Client,URLs Analyzed,Total Requests,Avg Requests Per URL,Total Errors,Avg Errors Per URL\n';
-    
-    for (const [client, stats] of Object.entries(results.clients)) {
-      csv += `${client},${stats.urlsAnalyzed},${stats.totalRequests},${stats.avgRequestsPerUrl.toFixed(2)},${stats.totalErrors},${stats.avgErrorsPerUrl.toFixed(2)}\n`;
+    // Prüfen, ob es sich um Vergleichsergebnisse handelt
+    const isComparison = results.urlComparisons !== undefined;
+    if (!isComparison) {
+      // Fallback für altes Format oder detaillierte Ergebnisse
+      let csv = 'Client,URLs Analyzed,Total Requests,Avg Requests Per URL,Total Errors,Avg Errors Per URL\n';
+      for (const [client, stats] of Object.entries(results.clients || {})) {
+        csv += `${client},${stats.urlsAnalyzed},${stats.totalRequests},${(stats.avgRequestsPerUrl || 0).toFixed(2)},${stats.totalErrors},${(stats.avgErrorsPerUrl || 0).toFixed(2)}\n`;
+      }
+      return csv;
     }
-    
+
+    // Neue, detaillierte CSV-Logik für Vergleichsergebnisse
+    const clients = Object.keys(results.clientSummary || {});
+    if (clients.length === 0) return 'URL,Info\n,No client data available\n';
+
+    const clientPairs = [];
+    if (clients.length > 1) {
+      for (let i = 0; i < clients.length; i++) {
+        for (let j = i + 1; j < clients.length; j++) {
+          clientPairs.push([clients[i], clients[j]]);
+        }
+      }
+    }
+
+    // Header erstellen
+    let header = ['url'];
+    clients.forEach(c => {
+      header.push(`${c}_requests`, `${c}_errors`, `${c}_ttfr_ms`, `${c}_tracking_reqs`, `${c}_ads_reqs`);
+    });
+    clientPairs.forEach(p => {
+      const pKey = `${p[0]}_vs_${p[1]}`;
+      header.push(`requests_diff (${pKey})`, `errors_diff (${pKey})`, `ttfr_diff_ms (${pKey})`, `tracking_diff (${pKey})`, `ads_diff (${pKey})`);
+    });
+    let csv = header.join(',') + '\n';
+
+    // Zeilen für jede URL erstellen
+    for (const [url, comp] of Object.entries(results.urlComparisons)) {
+      const row = { url: `"${url.replace(/"/g, '""')}"` };
+
+      // Client-Metriken sammeln
+      clients.forEach(c => {
+        const metrics = comp.clients[c];
+        if (metrics && !metrics.error) {
+          row[`${c}_requests`] = metrics.totalRequests || 0;
+          row[`${c}_errors`] = metrics.totalErrors || 0;
+          row[`${c}_ttfr_ms`] = metrics.sync?.firstRequestOffsetMs ?? 0;
+          row[`${c}_tracking_reqs`] = metrics.trackingRequests?.total || 0;
+          row[`${c}_ads_reqs`] = metrics.trackingRequests?.adsTotal || 0;
+        } else {
+          row[`${c}_requests`] = 'N/A';
+          row[`${c}_errors`] = 'N/A';
+          row[`${c}_ttfr_ms`] = 'N/A';
+          row[`${c}_tracking_reqs`] = 'N/A';
+          row[`${c}_ads_reqs`] = 'N/A';
+        }
+      });
+
+      // Differenzen sammeln
+      clientPairs.forEach(p => {
+        const key1 = `${p[0]}_vs_${p[1]}`;
+        const key2 = `${p[1]}_vs_${p[0]}`; // Für den Fall, dass die Reihenfolge anders ist
+        row[`requests_diff (${key1})`] = comp.requestDifferences?.[key1] ?? -(comp.requestDifferences?.[key2] ?? 0) ?? 'N/A';
+        row[`errors_diff (${key1})`] = comp.errorDifferences?.[key1] ?? -(comp.errorDifferences?.[key2] ?? 0) ?? 'N/A';
+        row[`ttfr_diff_ms (${key1})`] = comp.timingDifferences?.ttfrMs?.[key1] ?? -(comp.timingDifferences?.ttfrMs?.[key2] ?? 0) ?? 'N/A';
+        row[`tracking_diff (${key1})`] = comp.trackingDifferences?.[key1] ?? -(comp.trackingDifferences?.[key2] ?? 0) ?? 'N/A';
+        row[`ads_diff (${key1})`] = comp.adsDifferences?.[key1] ?? -(comp.adsDifferences?.[key2] ?? 0) ?? 'N/A';
+      });
+
+      csv += header.map(h => row[h] ?? '').join(',') + '\n';
+    }
+
     return csv;
   }
 
@@ -1093,7 +1215,7 @@ class HarAnalyzer {
 
     return html;
   }
-
+  
   /**
    * Generiert den Vergleichsteil des HTML-Berichts
    * @param {Object} results - Vergleichsergebnisse
@@ -1113,11 +1235,65 @@ class HarAnalyzer {
             <p>${results.overallSummary.totalClients || 0}</p>
           </div>
           <div class="summary-item">
-            <h3>Zeitstempel</h3>
-            <p>${new Date(results.timestamp).toLocaleString('de-DE')}</p>
+            <h3>Gesamtdauer</h3>
+            <p>${(results.overallSummary.crawlDurationMinutes || 0).toFixed(2)} Minuten</p>
+          </div>
+          <div class="summary-item">
+            <h3>Ø Abweichung 1. Request</h3>
+            <p>${(results.timingSpreads?.overall?.mean || 0).toFixed(1)} ms</p>
           </div>
         </div>
       </div>
+    `;
+
+    // Timing-Tabelle vor den Tabs
+    html += `
+    <div class="container">
+        <h2>Timing-Übersicht</h2>
+        <p><em>Start bis erste Netzwerkanfrage</em> = Zeit vom Visit-Signal bis zur ersten aufgezeichneten HTTP-Anfrage.</p>
+        
+        <h4>Statistik über alle URLs</h4>
+        <table>
+            <thead>
+                <tr>
+                    <th>Metrik</th>
+                    <th>Mittelwert (ms)</th>
+                    <th>Standardabweichung (ms)</th>
+                    <th>Maximalwert (ms)</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Maximale Abweichung des 1. Requests pro URL (Spread)</td>
+                    <td>${(results.timingSpreads?.overall?.mean || 0).toFixed(1)}</td>
+                    <td>${(results.timingSpreads?.overall?.stddev || 0).toFixed(1)}</td>
+                    <td>${(results.timingSpreads?.overall?.max || 0).toFixed(1)}</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h4>Statistik pro Client (über alle URLs)</h4>
+        <table>
+            <thead>
+                <tr>
+                    <th>Client</th>
+                    <th>Start→erste Anfrage Mittel (ms)</th>
+                    <th>Start→erste Anfrage StdAbw (ms)</th>
+                    <th>Start→erste Anfrage Max (ms)</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${Object.entries(results.timingSpreads?.perClient || {}).map(([client, stats]) => `
+                <tr>
+                    <td>${client}</td>
+                    <td>${(stats.ttfr?.mean || 0).toFixed(1)}</td>
+                    <td>${(stats.ttfr?.stddev || 0).toFixed(1)}</td>
+                    <td>${(stats.ttfr?.max || 0).toFixed(1)}</td>
+                </tr>
+                `).join('')}
+            </tbody>
+        </table>
+    </div>
     `;
 
     // Tabs für verschiedene Vergleichsansichten
@@ -1128,11 +1304,11 @@ class HarAnalyzer {
           <button class="tab active" onclick="openTab(event, 'tab-overview')">Übersicht</button>
           <button class="tab" onclick="openTab(event, 'tab-requests')">Anfragen</button>
           <button class="tab" onclick="openTab(event, 'tab-errors')">Fehler</button>
+          <button class="tab" onclick="openTab(event, 'tab-failed-urls')">Fehlgeschlagene URLs</button>
           <button class="tab" onclick="openTab(event, 'tab-tracking')">Tracking</button>
           <button class="tab" onclick="openTab(event, 'tab-media')">Medien</button>
           <button class="tab" onclick="openTab(event, 'tab-unique-urls')">Einzigartige URLs</button>
-          <button class="tab" onclick="openTab(event, 'tab-sync')">Synchronisation</button>
-          <button class="tab" onclick="openTab(event, 'tab-timings')">Timings</button>
+          <button class="tab" onclick="openTab(event, 'tab-timings-detail')">Timing-Details</button>
           ${results.normalizationEnabled ? '<button class="tab" onclick="openTab(event, \'tab-normalization\')">URL-Normalisierung</button>' : ''}
         </div>
         
@@ -1220,7 +1396,27 @@ class HarAnalyzer {
         
         <!-- Fehler-Tab -->
         <div id="tab-errors" class="tab-content">
-          <h3>Fehlervergleich nach URL</h3>
+          <h3>Fehler-Übersicht</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th>Client</th>
+                  <th>Gesamtfehler (4xx/5xx)</th>
+                  <th>URLs mit Fehlern</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${Object.entries(results.errorSummary?.byClient || {}).map(([client, stats]) => `
+                  <tr>
+                    <td>${client}</td>
+                    <td>${stats.totalErrors}</td>
+                    <td>${stats.urlsWithErrors}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+
+          <h3>Fehlerdifferenz nach URL</h3>
           <table>
             <thead>
               <tr>
@@ -1248,6 +1444,28 @@ class HarAnalyzer {
     html += `
             </tbody>
           </table>
+        </div>
+
+        <!-- Fehlgeschlagene URLs Tab -->
+        <div id="tab-failed-urls" class="tab-content">
+            <h3>URLs ohne Requests</h3>
+            <p>Die folgenden Clients haben für die jeweilige URL keine einzige Anfrage aufgezeichnet.</p>
+            <table>
+                <thead>
+                    <tr>
+                        <th>URL</th>
+                        <th>Client</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${results.errorSummary?.failedUrls?.map(item => `
+                        <tr>
+                            <td>${item.url}</td>
+                            <td>${item.client}</td>
+                        </tr>
+                    `).join('') || '<tr><td colspan="2">Keine fehlgeschlagenen URLs gefunden.</td></tr>'}
+                </tbody>
+            </table>
         </div>
 
         <!-- Tracking-Tab -->
@@ -1381,71 +1599,9 @@ class HarAnalyzer {
         <!-- Normalisierungs-Tab -->
         ${results.normalizationEnabled ? this._generateNormalizationReport(results.normalizationSummary) : ''}
 
-        <!-- Synchronisations-Tab -->
-        <div id="tab-sync" class="tab-content">
-          <h3>Synchronisationsvergleich</h3>
-          <h4>Aggregierte Statistiken (pro Client-Paar)</h4>
-          <table>
-            <thead>
-              <tr>
-                <th>Client-Paar</th>
-                <th>Start-Skew (ms) Mittel</th>
-                <th>Start-Skew p50</th>
-                <th>Start-Skew p95</th>
-                <th>Overlap (0-1) Mittel</th>
-                <th>Overlap p50</th>
-                <th>Overlap p95</th>
-              </tr>
-            </thead>
-            <tbody>
-            ${Object.entries(results.syncStats?.perPair || {}).map(([pair, stats]) => `
-              <tr>
-                <td>${pair}</td>
-                <td>${(stats.startSkews?.mean || 0).toFixed(1)}</td>
-                <td>${(stats.startSkews?.p50 || 0).toFixed(1)}</td>
-                <td>${(stats.startSkews?.p95 || 0).toFixed(1)}</td>
-                <td>${(stats.overlapRatios?.mean || 0).toFixed(2)}</td>
-                <td>${(stats.overlapRatios?.p50 || 0).toFixed(2)}</td>
-                <td>${(stats.overlapRatios?.p95 || 0).toFixed(2)}</td>
-              </tr>
-            `).join('')}
-            </tbody>
-          </table>
-
-          <h4>Pro URL</h4>
-          <table>
-            <thead>
-              <tr>
-                <th>URL</th>
-                <th>Client-Paar</th>
-                <th>Start-Skew (ms)</th>
-                <th>Overlap</th>
-              </tr>
-            </thead>
-            <tbody>
-            ${Object.entries(results.urlComparisons || {}).map(([url, comp]) => {
-              const rows = [];
-              for (const [pair, skew] of Object.entries(comp.syncDifferences?.startSkewMs || {})) {
-                const ov = comp.syncDifferences?.windowOverlap?.[pair];
-                rows.push(`
-                  <tr>
-                    <td>${url}</td>
-                    <td>${pair}</td>
-                    <td>${(skew || 0).toFixed(1)}</td>
-                    <td>${ov ? (ov.overlapRatio || 0).toFixed(2) : '0.00'}</td>
-                  </tr>
-                `);
-              }
-              return rows.join('');
-            }).join('')}
-            </tbody>
-          </table>
-        </div>
-
-        <!-- Timings-Tab -->
-        <div id="tab-timings" class="tab-content">
-          <h3>Timing (relativ zum Visit-Start)</h3>
-          <p><em>Start bis erste Netzwerkanfrage</em> = Zeit vom Visit-Signal bis zur ersten aufgezeichneten HTTP-Anfrage.</p>
+        <!-- Timings-Detail-Tab -->
+        <div id="tab-timings-detail" class="tab-content">
+          <h3>Timing-Details (relativ zum Visit-Start)</h3>
 
           <h4>Maximale Abweichung je URL (Spread)</h4>
           <table>
@@ -1461,27 +1617,9 @@ class HarAnalyzer {
                 <tr>
                   <td>${url}</td>
                   <td>${(data.spreadMs || 0).toFixed(1)}</td>
-                  <td>${Object.entries(data.valuesByClient || {}).map(([c,v]) => `${c}: ${v}`).join(', ')}</td>
+                  <td>${Object.entries(data.valuesByClient || {}).map(([c,v]) => `${c}: ${(v || 0).toFixed(1)}ms`).join(', ')}</td>
                 </tr>
               `).join('')}
-            </tbody>
-          </table>
-
-          <h4>Spread-Statistik (über alle URLs)</h4>
-          <table>
-            <thead>
-              <tr>
-                <th>Mittel (ms)</th>
-                <th>StdAbw (ms)</th>
-                <th>Max (ms)</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>${(results.timingSpreads?.overall?.mean || 0).toFixed(1)}</td>
-                <td>${(results.timingSpreads?.overall?.stddev || 0).toFixed(1)}</td>
-                <td>${(results.timingSpreads?.overall?.max || 0).toFixed(1)}</td>
-              </tr>
             </tbody>
           </table>
 
@@ -1513,49 +1651,6 @@ class HarAnalyzer {
               }).join('')}
             </tbody>
           </table>
-
-          <h4>Per Client (über alle URLs)</h4>
-          <table>
-            <thead>
-              <tr>
-                <th>Client</th>
-                <th>Start→erste Anfrage Mittel (ms)</th>
-                <th>Start→erste Anfrage StdAbw (ms)</th>
-                <th>Start→erste Anfrage Max (ms)</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${Object.entries(results.timingSpreads?.perClient || {}).map(([client, stats]) => `
-                <tr>
-                  <td>${client}</td>
-                  <td>${(stats.ttfr?.mean || 0).toFixed(1)}</td>
-                  <td>${(stats.ttfr?.stddev || 0).toFixed(1)}</td>
-                  <td>${(stats.ttfr?.max || 0).toFixed(1)}</td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
-
-          <h4>Gesamt</h4>
-          <table>
-            <thead>
-              <tr>
-                <th></th>
-                <th>Mittel (ms)</th>
-                <th>StdAbw (ms)</th>
-                <th>Max (ms)</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>Start→erste Anfrage</td>
-                <td>${(results.timingSpreads?.overall?.ttfr?.mean || 0).toFixed(1)}</td>
-                <td>${(results.timingSpreads?.overall?.ttfr?.stddev || 0).toFixed(1)}</td>
-                <td>${(results.timingSpreads?.overall?.ttfr?.max || 0).toFixed(1)}</td>
-              </tr>
-            </tbody>
-          </table>
-
         </div>
         
       </div>

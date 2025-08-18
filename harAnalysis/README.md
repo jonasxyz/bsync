@@ -183,7 +183,3 @@ Verwenden Sie den `-v` (verbose) Flag für detaillierte Ausgaben:
 ```bash
 node harAnalysis.js -d /pfad/zu/crawl/verzeichnis -v
 ```
-
-## Lizenz
-
-MIT 

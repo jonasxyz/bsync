@@ -27,6 +27,7 @@ program
   .option('--disable-media', 'Medienanalyse deaktivieren (standardmäßig aktiv)')
   .option('--normalize-urls', 'URL-Query-Parameter normalisieren, um dynamische IDs zu entfernen')
   .option('-v, --verbose', 'Ausführliche Ausgabe')
+  .option('--include-requests-in-json', 'Schließt detaillierte Request-Listen in die JSON-Ausgabe ein')
   .parse(process.argv);
 
 const options = program.opts();
@@ -47,7 +48,8 @@ const config = {
     adBlockEnabled: !options.disableAdblock,
     mediaAnalysisEnabled: !options.disableMedia,
     normalizeUrls: options.normalizeUrls,
-    verbose: options.verbose // Pass verbose option to analyzer
+    verbose: options.verbose, // Pass verbose option to analyzer
+    includeRequestsInJson: options.includeRequestsInJson,
   },
   
   // Ausführliche Ausgabe
@@ -110,7 +112,7 @@ async function main() {
   const comparisonOutputPath = path.join(config.outputDirectory, `client_comparison_${timestamp}`);
   
   // CSV-Zusammenfassung
-  const csvOutputPath = path.join(config.outputDirectory, `client_summary_${timestamp}.csv`);
+  const csvOutputPath = path.join(config.outputDirectory, `comparison_summary_${timestamp}.csv`);
   
   // Ergebnisse in den gewünschten Formaten exportieren
   for (const format of formats) {
@@ -133,7 +135,10 @@ async function main() {
       console.log(`- ${detailedOutputPath}.html`);
       console.log(`- ${comparisonOutputPath}.html`);
     } else if (format === 'csv') {
-      analyzer.exportResults(results, csvOutputPath, 'csv');
+      // analyzer.exportResults(results, csvOutputPath, 'csv');
+      if (!comparison.error) {
+        analyzer.exportResults(comparison, csvOutputPath, 'csv');
+      }
       console.log(`CSV-Zusammenfassung wurde gespeichert in:`);
       console.log(`- ${csvOutputPath}`);
     } else {
@@ -164,4 +169,4 @@ async function main() {
 main().catch(error => {
   console.error('Fehler bei der Analyse:', error);
   process.exit(1);
-}); 
+});

@@ -1,0 +1,23 @@
+{
+  "name": "har-analyzer",
+  "version": "1.0.0",
+  "description": "HAR-Analyse-Tool für den Vergleich verschiedener Crawl-Clients",
+  "main": "Client/harAnalysis.js",
+  "scripts": {
+    "analyze": "node Client/harAnalysis.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "har",
+    "analysis",
+    "crawler",
+    "http",
+    "archive"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "commander": "^9.4.1",
+    "chart.js": "^3.9.1"
+  }
+} 

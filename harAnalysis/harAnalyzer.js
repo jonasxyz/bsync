@@ -592,10 +592,17 @@ class HarAnalyzer {
                 }
               }
             }
-            // Vergleichsbericht: uniqueRequestUrls entfernen
+            // Vergleichsbericht: uniqueRequestUrls und tief genestete Request-Listen entfernen
             if (dataToWrite.urlComparisons) {
               for (const comparisonData of Object.values(dataToWrite.urlComparisons)) {
                 delete comparisonData.uniqueRequestUrls;
+                // Iteriere auch durch die Client-Metriken im Vergleichsobjekt
+                if (comparisonData.clients) {
+                  for (const clientMetrics of Object.values(comparisonData.clients)) {
+                    delete clientMetrics.requestUrls;
+                    delete clientMetrics.normalizedRequestUrls;
+                  }
+                }
               }
             }
           }
@@ -825,7 +832,7 @@ class HarAnalyzer {
         // zusätzliche Felder (brechen keine Verbraucher, die nur total nutzen):
         adsTotal: 0,               // Ads (EasyList)
         adsDomains: {},
-        matches: this.options.verbose ? [] : undefined, // optional: Details für Debug
+        matches: undefined, // optional: Details für Debug
       };
   
       for (const entry of harData.log.entries) {
@@ -843,7 +850,7 @@ class HarAnalyzer {
           if (host) tracking.adsDomains[host] = (tracking.adsDomains[host] || 0) + 1;
         }
   
-        if (tracking.matches) {
+        if (this.options.verbose && tracking.matches) {
           tracking.matches.push({
             url: res.url,
             type: res.type,
@@ -853,6 +860,8 @@ class HarAnalyzer {
         }
       }
   
+      // Das matches-Feld vor dem Zurückgeben entfernen, um die Ausgabe sauber zu halten
+      delete tracking.matches;
       return tracking;
     }
 
@@ -958,7 +967,8 @@ class HarAnalyzer {
     // Prüfen, ob es sich um Vergleichsergebnisse handelt
     const isComparison = results.urlComparisons !== undefined;
     if (!isComparison) {
-      // Fallback für altes Format oder detaillierte Ergebnisse
+      // Dieser Fall sollte durch die Änderungen in harAnalysis.js nicht mehr eintreten,
+      // aber als Fallback beibehalten.
       let csv = 'Client,URLs Analyzed,Total Requests,Avg Requests Per URL,Total Errors,Avg Errors Per URL\n';
       for (const [client, stats] of Object.entries(results.clients || {})) {
         csv += `${client},${stats.urlsAnalyzed},${stats.totalRequests},${(stats.avgRequestsPerUrl || 0).toFixed(2)},${stats.totalErrors},${(stats.avgErrorsPerUrl || 0).toFixed(2)}\n`;
@@ -966,67 +976,40 @@ class HarAnalyzer {
       return csv;
     }
 
-    // Neue, detaillierte CSV-Logik für Vergleichsergebnisse
+    // Neue, "tidy" CSV-Logik für wissenschaftliche Analyse
     const clients = Object.keys(results.clientSummary || {});
-    if (clients.length === 0) return 'URL,Info\n,No client data available\n';
+    if (clients.length === 0) return 'url,client,requests,errors,ttfr_ms,tracking_reqs,ads_reqs\n';
 
-    const clientPairs = [];
-    if (clients.length > 1) {
-      for (let i = 0; i < clients.length; i++) {
-        for (let j = i + 1; j < clients.length; j++) {
-          clientPairs.push([clients[i], clients[j]]);
+    // Header
+    const header = ['url', 'client', 'requests', 'errors', 'ttfr_ms', 'tracking_reqs', 'ads_reqs'];
+    let csvRows = [header.join(',')];
+
+    // Zeilen für jede URL und jeden Client erstellen
+    for (const [url, comp] of Object.entries(results.urlComparisons)) {
+      for (const clientName of clients) {
+        const metrics = comp.clients[clientName];
+        const row = [
+          `"${url.replace(/"/g, '""')}"`, // URL in Anführungszeichen, falls sie Kommas enthält
+          clientName
+        ];
+
+        if (metrics && !metrics.error) {
+          row.push(
+            metrics.totalRequests || 0,
+            metrics.totalErrors || 0,
+            metrics.sync?.firstRequestOffsetMs ?? 0,
+            metrics.trackingRequests?.total || 0,
+            metrics.trackingRequests?.adsTotal || 0
+          );
+        } else {
+          // Fehlerfall oder fehlende Daten
+          row.push('N/A', 'N/A', 'N/A', 'N/A', 'N/A');
         }
+        csvRows.push(row.join(','));
       }
     }
 
-    // Header erstellen
-    let header = ['url'];
-    clients.forEach(c => {
-      header.push(`${c}_requests`, `${c}_errors`, `${c}_ttfr_ms`, `${c}_tracking_reqs`, `${c}_ads_reqs`);
-    });
-    clientPairs.forEach(p => {
-      const pKey = `${p[0]}_vs_${p[1]}`;
-      header.push(`requests_diff (${pKey})`, `errors_diff (${pKey})`, `ttfr_diff_ms (${pKey})`, `tracking_diff (${pKey})`, `ads_diff (${pKey})`);
-    });
-    let csv = header.join(',') + '\n';
-
-    // Zeilen für jede URL erstellen
-    for (const [url, comp] of Object.entries(results.urlComparisons)) {
-      const row = { url: `"${url.replace(/"/g, '""')}"` };
-
-      // Client-Metriken sammeln
-      clients.forEach(c => {
-        const metrics = comp.clients[c];
-        if (metrics && !metrics.error) {
-          row[`${c}_requests`] = metrics.totalRequests || 0;
-          row[`${c}_errors`] = metrics.totalErrors || 0;
-          row[`${c}_ttfr_ms`] = metrics.sync?.firstRequestOffsetMs ?? 0;
-          row[`${c}_tracking_reqs`] = metrics.trackingRequests?.total || 0;
-          row[`${c}_ads_reqs`] = metrics.trackingRequests?.adsTotal || 0;
-        } else {
-          row[`${c}_requests`] = 'N/A';
-          row[`${c}_errors`] = 'N/A';
-          row[`${c}_ttfr_ms`] = 'N/A';
-          row[`${c}_tracking_reqs`] = 'N/A';
-          row[`${c}_ads_reqs`] = 'N/A';
-        }
-      });
-
-      // Differenzen sammeln
-      clientPairs.forEach(p => {
-        const key1 = `${p[0]}_vs_${p[1]}`;
-        const key2 = `${p[1]}_vs_${p[0]}`; // Für den Fall, dass die Reihenfolge anders ist
-        row[`requests_diff (${key1})`] = comp.requestDifferences?.[key1] ?? -(comp.requestDifferences?.[key2] ?? 0) ?? 'N/A';
-        row[`errors_diff (${key1})`] = comp.errorDifferences?.[key1] ?? -(comp.errorDifferences?.[key2] ?? 0) ?? 'N/A';
-        row[`ttfr_diff_ms (${key1})`] = comp.timingDifferences?.ttfrMs?.[key1] ?? -(comp.timingDifferences?.ttfrMs?.[key2] ?? 0) ?? 'N/A';
-        row[`tracking_diff (${key1})`] = comp.trackingDifferences?.[key1] ?? -(comp.trackingDifferences?.[key2] ?? 0) ?? 'N/A';
-        row[`ads_diff (${key1})`] = comp.adsDifferences?.[key1] ?? -(comp.adsDifferences?.[key2] ?? 0) ?? 'N/A';
-      });
-
-      csv += header.map(h => row[h] ?? '').join(',') + '\n';
-    }
-
-    return csv;
+    return csvRows.join('\n');
   }
 
   /**
@@ -1215,7 +1198,7 @@ class HarAnalyzer {
 
     return html;
   }
-  
+
   /**
    * Generiert den Vergleichsteil des HTML-Berichts
    * @param {Object} results - Vergleichsergebnisse
@@ -1732,9 +1715,11 @@ class HarAnalyzer {
    * @returns {string} HTML-Fragment
    */
   _generateDetailedReport(results) {
+    // Diese Funktion wird nicht mehr aufgerufen, da wir nur noch Vergleichsberichte erstellen.
+    // Sie kann als Referenz oder für zukünftige Erweiterungen im Code verbleiben.
     let html = `
       <div class="container">
-        <h2>Zusammenfassung</h2>
+        <h2>Detaillierter Bericht (veraltet)</h2>
         <div class="summary-box">
           <div class="summary-item">
             <h3>Analysierte URLs</h3>

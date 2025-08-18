@@ -105,37 +105,30 @@ async function main() {
     ? ['json', 'html', 'csv'] 
     : [config.outputFormat.toLowerCase()];
   
-  // Detaillierte Ergebnisse
-  const detailedOutputPath = path.join(config.outputDirectory, `detailed_analysis_${timestamp}`);
+  // Detaillierte Ergebnisse (werden nicht mehr separat gespeichert)
+  // const detailedOutputPath = path.join(config.outputDirectory, `detailed_analysis_${timestamp}`);
   
-  // Vergleichsergebnisse
-  const comparisonOutputPath = path.join(config.outputDirectory, `client_comparison_${timestamp}`);
+  // Umfassender Report-Dateiname
+  const reportPath = path.join(config.outputDirectory, `analysis_report_${timestamp}`);
   
   // CSV-Zusammenfassung
-  const csvOutputPath = path.join(config.outputDirectory, `comparison_summary_${timestamp}.csv`);
+  const csvOutputPath = path.join(config.outputDirectory, `analysis_summary_${timestamp}.csv`);
   
   // Ergebnisse in den gewünschten Formaten exportieren
   for (const format of formats) {
     if (format === 'json') {
-      analyzer.exportResults(results, `${detailedOutputPath}.json`, 'json');
-      analyzer.exportResults(comparison, `${comparisonOutputPath}.json`, 'json');
-      console.log(`JSON-Ergebnisse wurden gespeichert in:`);
-      console.log(`- ${detailedOutputPath}.json`);
-      console.log(`- ${comparisonOutputPath}.json`);
+      analyzer.exportResults(comparison, `${reportPath}.json`, 'json');
+      console.log(`JSON-Bericht wurde gespeichert in: ${reportPath}.json`);
     } else if (format === 'html') {
-      analyzer.exportResults(results, `${detailedOutputPath}.html`, 'html');
       if (!comparison.error) {
-        analyzer.exportResults(comparison, `${comparisonOutputPath}.html`, 'html');
+        analyzer.exportResults(comparison, `${reportPath}.html`, 'html');
       } else {
         // Falls Vergleich fehlgeschlagen ist, exportiere eine einfache Fehlerseite
         const errorHtml = `<html><body><h1>Client-Vergleich</h1><p>Fehler: ${comparison.error}</p><p>Zeit: ${comparison.timestamp}</p></body></html>`;
-        fs.writeFileSync(`${comparisonOutputPath}.html`, errorHtml);
+        fs.writeFileSync(`${reportPath}.html`, errorHtml);
       }
-      console.log(`HTML-Berichte wurden gespeichert in:`);
-      console.log(`- ${detailedOutputPath}.html`);
-      console.log(`- ${comparisonOutputPath}.html`);
+      console.log(`HTML-Bericht wurde gespeichert in: ${reportPath}.html`);
     } else if (format === 'csv') {
-      // analyzer.exportResults(results, csvOutputPath, 'csv');
       if (!comparison.error) {
         analyzer.exportResults(comparison, csvOutputPath, 'csv');
       }

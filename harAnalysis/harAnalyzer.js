@@ -15,10 +15,10 @@ class HarAnalyzer {
       ...options
     };
     
-    // AdBlock-Liste laden, falls aktiviert
+    // AdBlock-Listen laden, falls aktiviert
     if (this.options.adBlockEnabled) {
       this.adBlockList = new AdBlockLists({ verbose: this.options.verbose });
-      this.adBlockListInitialized = this.adBlockList.initialized; // Promise for initialization
+      this.adBlockListInitialized = this.adBlockList.initialized;
     }
   }
 
@@ -29,7 +29,7 @@ class HarAnalyzer {
    */
   async analyzeHarFile(harFilePath) {
     if (this.adBlockListInitialized) {
-      await this.adBlockListInitialized; // Ensure rules are loaded
+      await this.adBlockListInitialized; // Ensure legacy rules are loaded
     }
     try {
       const harContent = fs.readFileSync(harFilePath, 'utf8');
@@ -173,7 +173,7 @@ class HarAnalyzer {
                 totalErrors: 0,
                 urlsAnalyzed: 0,
                 statusCodes: {},
-                trackingStats: { total: 0 },
+                trackingStats: { total: 0, adsTotal: 0 },
                 mediaStats: { total: 0, size: 0 }
               };
             }
@@ -187,6 +187,8 @@ class HarAnalyzer {
               // Tracking- und Media-Statistiken aggregieren
               if (metrics.trackingRequests) {
                 results.clients[clientDir].trackingStats.total += metrics.trackingRequests.total || 0;
+                results.clients[clientDir].trackingStats.adsTotal =
+                  (results.clients[clientDir].trackingStats.adsTotal || 0) + (metrics.trackingRequests.adsTotal || 0);
               }
               if (metrics.mediaFiles) {
                 results.clients[clientDir].mediaStats.total += metrics.mediaFiles.total || 0;
@@ -215,6 +217,7 @@ class HarAnalyzer {
           // Durchschnittswerte für Tracking und Media
           if (clientStats.trackingStats) {
             clientStats.avgTrackingRequestsPerUrl = clientStats.trackingStats.total / clientStats.urlsAnalyzed;
+            clientStats.avgAdsRequestsPerUrl = (clientStats.trackingStats.adsTotal || 0) / clientStats.urlsAnalyzed;
           }
           if (clientStats.mediaStats) {
             clientStats.avgMediaFilesPerUrl = clientStats.mediaStats.total / clientStats.urlsAnalyzed;
@@ -380,6 +383,12 @@ class HarAnalyzer {
             if (metrics1.trackingRequests && metrics2.trackingRequests) {
               comparison.urlComparisons[url].trackingDifferences[comparisonKey] = 
                 (metrics1.trackingRequests.total || 0) - (metrics2.trackingRequests.total || 0);
+              // Ads-Differenz (EasyList)
+              const adsDiff = (metrics1.trackingRequests.adsTotal || 0) - (metrics2.trackingRequests.adsTotal || 0);
+              if (!comparison.urlComparisons[url].adsDifferences) {
+                comparison.urlComparisons[url].adsDifferences = {};
+              }
+              comparison.urlComparisons[url].adsDifferences[comparisonKey] = adsDiff;
             }
             
             // Medien-Differenz
@@ -740,38 +749,54 @@ class HarAnalyzer {
     }
   }
 
-  /**
-   * Analysiert Anfragen, die auf der Tracking-Liste (EasyList) stehen
+    /**
+   * Analysiert Anfragen gegen EasyPrivacy (Tracking) und EasyList (Ads)
    */
-  _analyzeTrackingRequests(harData) {
-    if (!this.options.adBlockEnabled) return null;
-
-    if (this.options.verbose) {
-      console.log(`[HarAnalyzer] Running Tracking analysis for ${this._extractMainUrl(harData) || 'unknown URL'}`);
-    }
-
-    const trackingRequests = {
-      total: 0,
-      domains: {}
-    };
-
-    for (const entry of harData.log.entries) {
-      const url = entry.request.url;
-      
-      // Prüfen, ob die URL auf der Tracking-Liste steht
-      if (this.adBlockList && this.adBlockList.shouldBlock(url)) {
-        trackingRequests.total++;
-        try {
-          const domain = new URL(url).hostname;
-          trackingRequests.domains[domain] = (trackingRequests.domains[domain] || 0) + 1;
-        } catch(e) {
-          // ignore invalid urls
+    _analyzeTrackingRequests(harData) {
+      if (!this.options.adBlockEnabled) return null;
+  
+      const pageUrl = this._extractMainUrl(harData) || undefined;
+      if (this.options.verbose) {
+        console.log(`[HarAnalyzer] Tracking-Analyse für ${pageUrl || 'unbekannte Seite'}`);
+      }
+  
+      const tracking = {
+        // rückwärtskompatibel:
+        total: 0,                  // nur Tracking (EasyPrivacy)
+        domains: {},               // nur Tracking-Domains
+        // zusätzliche Felder (brechen keine Verbraucher, die nur total nutzen):
+        adsTotal: 0,               // Ads (EasyList)
+        adsDomains: {},
+        matches: this.options.verbose ? [] : undefined, // optional: Details für Debug
+      };
+  
+      for (const entry of harData.log.entries) {
+        const res = this.adBlockList.classifyHarEntry(entry, pageUrl);
+        if (!res.matched) continue;
+  
+        let host = '';
+        try { host = new URL(res.url).hostname; } catch (_) {}
+  
+        if (res.category === 'tracking') {
+          tracking.total++;
+          if (host) tracking.domains[host] = (tracking.domains[host] || 0) + 1;
+        } else if (res.category === 'ads') {
+          tracking.adsTotal++;
+          if (host) tracking.adsDomains[host] = (tracking.adsDomains[host] || 0) + 1;
+        }
+  
+        if (tracking.matches) {
+          tracking.matches.push({
+            url: res.url,
+            type: res.type,
+            category: res.category,
+            filter: res.filterText || null,
+          });
         }
       }
+  
+      return tracking;
     }
-    
-    return trackingRequests;
-  }
 
   /**
    * Analysiert Mediendateien (Bilder, Videos, Audio)
@@ -1122,6 +1147,7 @@ class HarAnalyzer {
                 <th>Gesamtanfragen</th>
                 <th>Durchschnitt Anfragen/URL</th>
                 <th>Ø Tracking-Anfragen / URL</th>
+                <th>Ø Werbe-Anfragen / URL</th>
                 <th>Ø Mediendateien / URL</th>
                 <th>Ø Mediengröße / URL</th>
               </tr>
@@ -1148,6 +1174,7 @@ class HarAnalyzer {
           <td>${stats.totalRequests || 0}</td>
           <td>${(stats.avgRequestsPerUrl || 0).toFixed(2)}</td>
           <td>${(stats.avgTrackingRequestsPerUrl || 0).toFixed(2)}</td>
+          <td>${(stats.avgAdsRequestsPerUrl || 0).toFixed(2)}</td>
           <td>${(stats.avgMediaFilesPerUrl || 0).toFixed(2)}</td>
           <td>${formatBytes(stats.avgMediaSizePerUrl || 0)}</td>
         </tr>
@@ -1259,13 +1286,16 @@ class HarAnalyzer {
       html += `<h5>Differenz-Ansicht</h5><table><thead><tr>
         <th>Vergleich</th>
         <th>Differenz (Anzahl Tracking-Requests)</th>
+        <th>Differenz (Anzahl Werbe-Requests)</th>
         </tr></thead><tbody>`;
 
       for (const [comparisonKey, diff] of Object.entries(comparison.trackingDifferences)) {
+        const adsDiff = (comparison.adsDifferences || {})[comparisonKey] || 0;
         html += `
           <tr>
             <td>${comparisonKey}</td>
             <td class="${diff > 0 ? 'warning' : diff < 0 ? 'error' : ''}">${diff}</td>
+            <td class="${adsDiff > 0 ? 'warning' : adsDiff < 0 ? 'error' : ''}">${adsDiff}</td>
           </tr>
         `;
       }
@@ -1761,6 +1791,19 @@ class HarAnalyzer {
     }
     
     return harData.log.entries.map(entry => entry.request.url);
+  }
+
+  /**
+   * Extrahiert die Domain aus einer URL
+   * @param {string} url - URL
+   * @returns {string} Domain oder leerer String bei Fehlern
+   */
+  _extractDomain(url) {
+    try {
+      return new URL(url).hostname;
+    } catch (error) {
+      return '';
+    }
   }
 }
 

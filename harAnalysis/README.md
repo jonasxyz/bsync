@@ -19,7 +19,20 @@ Dieses Tool analysiert HAR-Dateien (HTTP Archive), die von verschiedenen Crawl-C
 3. Installiere die Abhängigkeiten:
 
 ```bash
+cd harAnalysis
 npm install
+```
+
+**Wichtiger Hinweis**: Das Tool benötigt die `@ghostery/adblocker` Bibliothek für erweiterte AdBlock-Funktionen. Falls die Installation fehlschlägt, installieren Sie die Abhängigkeiten manuell:
+
+```bash
+npm install @ghostery/adblocker commander chart.js
+```
+
+4. (Optional) Teste die AdBlock-Erkennung (EasyPrivacy/EasyList):
+
+```bash
+npm test
 ```
 
 ## Verwendung
@@ -106,9 +119,12 @@ Das Tool extrahiert und vergleicht die folgenden Kennzahlen aus den HAR-Dateien:
 - **Timing-Metriken**: Ladezeiten, Antwortzeiten, etc.
 
 ### Erweiterte Kennzahlen (optional)
-- **Drittanbieter-Requests**: Anfragen an Werbenetzwerke und Tracker
+- **Tracking-Analyse**: Vollständige EasyList-Unterstützung mit @ghostery/adblocker
+  - Kosmetische Regeln (Element-Hiding)
+  - Komplexe ABP-Optionen ($image, $third-party, $script, $domain=...)
+  - Kategorisierung von Anfragen (Tracker, Werbung, etc.)
+  - Detaillierte Analyse pro Request-Typ
 - **Medienanalyse**: Anzahl und Größe von Bildern, Videos, etc.
-- **CAPTCHA-Erkennung**: Erkennung von CAPTCHA-Herausforderungen
 
 ### Vergleichsmetriken
 - **Request-Differenz**: Unterschied in der Anzahl der Anfragen zwischen Clients
@@ -121,7 +137,52 @@ Das Tool besteht aus den folgenden Hauptkomponenten:
 
 - **harAnalysis.js**: Hauptskript mit Kommandozeilen-Interface
 - **harAnalyzer.js**: Klasse zur Analyse von HAR-Dateien und Generierung von Berichten
-- **adBlockLists.js**: Hilfklasse zur Erkennung von Werbenetzwerken und Trackern
+- **adBlockLists.js**: Lädt EasyList (Ads) und EasyPrivacy (Tracking) via `@ghostery/adblocker`,
+  cached die Engines und bietet Match-APIs (inkl. HAR-Unterstützung).
+
+### Tracking-Zählung (EasyPrivacy vs. EasyList)
+
+- Tracking-Anfragen basieren auf EasyPrivacy-Regeln und werden separat gezählt (`trackingRequests.total`).
+- Werbe-Anfragen (EasyList) werden in `trackingRequests.adsTotal` geführt und nicht in `trackingRequests.total` eingerechnet.
+  Details siehe `harAnalyzer._analyzeTrackingRequests()`.
+
+## Troubleshooting
+
+### Häufige Fehler
+
+**1. `fs is not defined` Fehler:**
+```
+ReferenceError: fs is not defined
+```
+- **Lösung**: Stellen Sie sicher, dass alle Dateien die neuesten Versionen sind. Der `fs`-Import wurde in `adBlockLists.js` hinzugefügt.
+
+**2. `getFiltersCount is not a function` Fehler:**
+```
+TypeError: this.engine.getFiltersCount is not a function
+```
+- **Lösung**: Die Ghostery AdBlock Engine API wurde angepasst. Verwenden Sie die neueste Version der Dateien.
+
+**3. Netzwerkfehler beim Laden der Filterlisten:**
+```
+Failed to load AdBlock rules: Error: Request timeout
+```
+- **Lösung**: 
+  - Überprüfen Sie Ihre Internetverbindung
+  - Versuchen Sie es später erneut (Server könnte temporär nicht verfügbar sein)
+  - Das Tool verwendet automatisch Cache-Dateien als Fallback
+
+**4. Installation der @ghostery/adblocker fehlgeschlagen:**
+- **Lösung**: Installieren Sie die Abhängigkeit manuell:
+  ```bash
+  npm install @ghostery/adblocker --save
+  ```
+
+### Debug-Modus
+
+Verwenden Sie den `-v` (verbose) Flag für detaillierte Ausgaben:
+```bash
+node harAnalysis.js -d /pfad/zu/crawl/verzeichnis -v
+```
 
 ## Lizenz
 

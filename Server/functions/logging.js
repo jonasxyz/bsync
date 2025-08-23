@@ -13,7 +13,7 @@ module.exports ={
         
         file = path.join(storagePath, "CRAWL_" + urlListFilename + "_" + date + ".csv");
         try {
-            fs.writeFileSync(file, "STATUS, ITERATION, CLIENT, DATE, READY AFTER(MS), WATINGTIME(MS), ESTIMATED ACCESS AFTER(MS), EXIT AFTER(MS), ESTIMATED MAX DELAY(MS)");
+            fs.writeFileSync(file, "STATUS, ITERATION, CLIENT, DATE, READY AFTER(MS), WATINGTIME(MS), REQUEST AFTER(MS), ITERATION_DONE AFTER(MS), MAX DELAY(MS)");
         } catch (error) {
             console.error("\x1b[31mERROR: " + "Error accessing storage path for writing log file:", "\x1b[0m");
             console.error(error);
@@ -24,7 +24,7 @@ module.exports ={
 
         file = path.join(storagePath, "TESTCRAWL_" + date + ".csv");
         try {
-            fs.writeFileSync(file, "STATUS, ITERATION, CLIENT, DATE, READY AFTER(MS), WATINGTIME(MS), REQUEST AFTER(MS), DONE AFTER(MS), MAX DELAY(MS)");
+            fs.writeFileSync(file, "STATUS, ITERATION, CLIENT, DATE, READY AFTER(MS), WATINGTIME(MS), REQUEST AFTER(MS), ITERATION_DONE AFTER(MS), MAX DELAY(MS)");
         } catch (error) {
             console.error("\x1b[31mERROR: " + "Error accessing storage path for writing test log file:", "\x1b[0m");
             console.error(error);
@@ -34,13 +34,13 @@ module.exports ={
 
         //var arrayField = urlsDone-1
         array.forEach(element => fs.appendFileSync(file, "\r\n"+"REQUEST" +", " +"url#" + urlsDone +", " + element.workerName+ ", " + element.dateArray[0] + ", " + element.readyArray[0]
-        + ", " + element.waitingTimeArray[0]+ ", " + element.requestArray[0]+ ", " + element.doneArray[0] + ", " + element.maxDelayArray[0]));
+        + ", " + element.waitingTimeArray[0]+ ", " + element.requestArray[0]+ ", " + element.browserFinishedArray[0] + ", " + element.maxDelayArray[0]));
 
     },
     logCalibration : function (array, iterations) {
 
         array.forEach(element => fs.appendFileSync(file, "\r\n"+"CALIBRATION" +", " + "#" + (iterations+1) + ","+ element.workerName+ "," + element.dateArray[iterations] + ", " + element.readyArray[iterations]
-        + ", " + 0 + ", " +element.requestArray[iterations] + ", " + element.doneArray[iterations] + ", " + element.maxDelayArray[iterations]));
+        + ", " + 0 + ", " +element.requestArray[iterations] + ", " + element.browserFinishedArray[iterations] + ", " + element.maxDelayArray[iterations]));
     },
     logCrawling2 : function (array, urlsDone) {
 

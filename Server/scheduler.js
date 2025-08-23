@@ -93,6 +93,7 @@ var fastestReady;
 var slowestReady;
 var timeCheckReadySent; // Timestamp when CHECK_READY was sent
 var currentReadyWorkers = new Set(); // Track which workers have reported ready for the current CHECK_READY
+var currentCompletedWorkers = new Set(); // Track which workers have reported ITERATION_DONE for the current iteration
 
 var browserReadyCountdown;
 var browserDoneCountdown;
@@ -348,10 +349,17 @@ io.on("connection", socket => {
         pendingJobs -= 1;
 
         // Extract data from iterationData
-        const { harPath, urlVisitError, processingError } = iterationData || {}; // Default to empty object if undefined
+        const { harPath, urlVisitError, processingError, firstRequestAfterMs } = iterationData || {}; // Default to empty object if undefined
         const clientName = socket.data.clientname.toString();
         const currentUrlForLog = currentJobData.clearUrl ? currentJobData.clearUrl.toString() : "N/A";
         const currentUrlIndexForLog = urlsDone + 1; // 1-based index for logging
+
+        // Dedupe protection: only first ITERATION_DONE per worker counts
+        if (currentCompletedWorkers.has(clientName)) {
+            helperFunctions.logMessage("debug", `Duplicate ITERATION_DONE ignored for ${clientName}`);
+            return;
+        }
+        currentCompletedWorkers.add(clientName);
 
         if (urlVisitError) {
             console.log("\x1b[31mERROR: " + ` Client ${clientName} reported a URL visit error for ${currentUrlForLog}`);
@@ -374,9 +382,12 @@ io.on("connection", socket => {
         
         let dateBrowserFinsihed = Date.now(); //vmedit add browserfinished log
 
-        // tempArray[arrayPosition].browserFinishedArray.push((dateBrowserFinsihed - timeUrlSent)); 03 kann weg glaub ich, ersetzen durch doneArray, scheint auch
-        // nichtmehr vorkzukommen.
-        tempArray[arrayPosition].browserFinishedArray.push((dateBrowserFinsihed - timeUrlSent));
+        // Robust browser-finished duration without fallback to URL_DONE
+        let browserFinishedMs = (typeof timeUrlSent === 'number') ? (dateBrowserFinsihed - timeUrlSent) : undefined;
+        if (browserFinishedMs == null || isNaN(browserFinishedMs) || browserFinishedMs < 0) {
+            browserFinishedMs = undefined;
+        }
+        tempArray[arrayPosition].browserFinishedArray.push(browserFinishedMs);
 
         if(tempDateUrlDone == undefined || urlVisitError || processingError){ // Adjusted condition
 
@@ -402,10 +413,29 @@ io.on("connection", socket => {
         //if(! (config.test_run == false && calibrationDone == true )) {  // always except normal crawl after calibration
         if(config.test_run == true || calibrationDone == false) {  // always except normal crawl after calibration
             // todo ? eigentlich nur bei testrun oder calibration
+            const durationUrlSentToIterationDoneRaw = (typeof timeUrlSent === 'number') ? (dateBrowserFinsihed - timeUrlSent) : undefined;
+            const durationUrlSentToIterationDone = (durationUrlSentToIterationDoneRaw == null || isNaN(durationUrlSentToIterationDoneRaw) || durationUrlSentToIterationDoneRaw < 0)
+                ? undefined
+                : durationUrlSentToIterationDoneRaw;
+            const durationUrlSentToUrlDone = (typeof tempDateUrlDone === 'number' && !isNaN(tempDateUrlDone) && tempDateUrlDone >= 0) ? tempDateUrlDone : undefined;
+            const durationUrlDoneToIterationDone = (durationUrlSentToIterationDone != null && durationUrlSentToUrlDone != null)
+                ? (durationUrlSentToIterationDone - durationUrlSentToUrlDone)
+                : undefined;
+
+            const afterReqMs = (typeof tempDateUrlDone === 'number' && typeof tempArray[arrayPosition].requestArray[tempIterations] === 'number')
+                ? (tempDateUrlDone - tempArray[arrayPosition].requestArray[tempIterations])
+                : undefined;
 
             console.log("\x1b[34mITERATION_DONE:\x1b[0m",  tempArray[arrayPosition].workerName , " URL done signal \x1b[34m",
-                    ( tempDateUrlDone -  tempArray[arrayPosition].requestArray[tempIterations]) , "ms\x1b[0m after receiving request"
-                    + " \x1b[36m" , (tempDateUrlDone - timeUrlSent ) + "\x1b[0m ms after starting iteration. "); //VMEDIT
+                    (afterReqMs != null ? afterReqMs : 'N/A') , "ms\x1b[0m after receiving request"
+                    + " \x1b[36m" , (durationUrlSentToIterationDone != null ? durationUrlSentToIterationDone : 'N/A') + "\x1b[0m ms after starting iteration. ");
+
+            
+
+            console.log(`\x1b[34mTIMING_DETAILS (${tempArray[arrayPosition].workerName}):\x1b[0m ` +
+                `URL_SENT->URL_DONE: \x1b[36m${durationUrlSentToUrlDone != null ? durationUrlSentToUrlDone + ' ms' : 'N/A'}\x1b[0m | ` +
+                `URL_SENT->ITERATION_DONE: \x1b[36m${durationUrlSentToIterationDone != null ? durationUrlSentToIterationDone + ' ms' : 'N/A'}\x1b[0m | ` +
+                `URL_DONE->ITERATION_DONE: \x1b[36m${durationUrlDoneToIterationDone != null ? durationUrlDoneToIterationDone + ' ms' : 'N/A'}\x1b[0m`);
 
             // console.log( (dateUrlDone - timeUrlSent) - tempArray[arrayPosition].requestArray[tempIterations] , " " , dateUrlDone , " - " , tempArray[arrayPosition].requestArray[tempIterations] ); //debug
 
@@ -422,22 +452,18 @@ io.on("connection", socket => {
 
                 tempArray[arrayPosition].dateArray.push(new Date(tempDateUrlDone + timeUrlSent).toISOString()); 
 
-                var estimatedRequest;
-                if(tempDateUrlDone == undefined ||tempDateUrlDone == -1 ){ // vmedit undefined if not done
-                    estimatedRequest = undefined;
+                // Use proxy-measured first request if available; otherwise leave undefined
+                let accessAfterMs;
+                if (typeof firstRequestAfterMs === 'number' && !isNaN(firstRequestAfterMs) && firstRequestAfterMs >= 0) {
+                    accessAfterMs = firstRequestAfterMs;
+                } else {
+                    accessAfterMs = undefined;
+                }
 
-                }else{
-                    estimatedRequest = tempDateUrlDone  - arrayClients[calibrationArrayPosition].offsetDone;
-                }    
+                tempArray[arrayPosition].requestArray.push(accessAfterMs);
 
-                // console.log ((dateUrlDone - timeUrlSent) , " minus " + arrayClients[calibrationArrayPosition].offsetDone , " gleich " , estimatedRequest ); //debug
-                tempArray[arrayPosition].requestArray.push(estimatedRequest);
-
-                console.log("\x1b[34mCRAWLED:\x1b[0m", arrayClients[calibrationArrayPosition].workerName , "crawled URL", currentJobData.clearUrl , "finished\x1b[34m",
+                console.log("\x1b[34mITERATION_DONE:\x1b[0m", arrayClients[calibrationArrayPosition].workerName , "crawled URL", currentJobData.clearUrl , "finished\x1b[34m",
                 tempDateUrlDone , "ms\x1b[0m after distributing URL");
-                //console.log("\x1b[34mCRAWLED:\x1b[0m", arrayClients[calibrationArrayPosition].workerName , "crawled URL", tempUrl , "finished\x1b[34m",
-                    //tempDateUrlDone , "ms\x1b[0m after distributing URL. Estimated Request\x1b[34m ",estimatedRequest , "ms\x1b[0m after distribution");
-                    // Todo estimatedRequest not working
             }            
         }
   
@@ -550,6 +576,7 @@ io.on("connection", socket => {
 
             timeCheckReadySent = Date.now();
             currentReadyWorkers.clear();
+            currentCompletedWorkers.clear();
             io.sockets.emit("CHECK_READY", currentJobData);
             helperFunctions.logMessage("status", "CHECK_READY sent to all workers for URL: " + currentJobData.clearUrl + " (Index: " + (currentJobData.urlIndex) + ")");
 
@@ -656,6 +683,8 @@ io.on("connection", socket => {
         // Open readiness window and notify clients for the first iteration immediately
         timeCheckReadySent = Date.now();
         timeUrlSent = null; // not in visiting phase yet
+        currentReadyWorkers.clear();
+        currentCompletedWorkers.clear();
         io.sockets.emit("CHECK_READY", { clearUrl: currentJobData.clearUrl, urlIndex: currentJobData.urlIndex });
 
         // Start capturer if requested (first iteration needs this before visit)
@@ -711,11 +740,11 @@ io.on("connection", socket => {
 
         //calibrationDone ? (tempArray = arrayStatistics) : (tempArray = arrayClients);
 
-        arrayStatistics.forEach(element => {
-            //console.log(element.readyArray.length +" kleiner" + testsDone) // debug
+        // Inspect correct structure for readiness depending on mode
+        const arrToCheck = calibrationDone ? arrayStatistics : arrayClients;
+        arrToCheck.forEach(element => {
             if (element.readyArray.length === 0) {
                 console.log("WARNING: sendUrl called but not all browsers have ready values. Ready browsers: " + browsersReady + "/" + config.num_clients);
-                // Note: return inside forEach only exits the callback; we only warn here.
             }
         });
 
@@ -728,6 +757,7 @@ io.on("connection", socket => {
         pendingRequests = 0;
         browsersReady = 0; // 03 glaub doch hier
         currentReadyWorkers.clear();
+        currentCompletedWorkers.clear();
 
         // if(urlsDone != 0){
         //     retrieveUrl();
@@ -744,9 +774,10 @@ io.on("connection", socket => {
         // io.sockets.emit("visit_url", tempUrl); // Old
         // Attach a unified visit timestamp for all clients
         const visitTimestamp = new Date().toISOString();
-        io.sockets.emit("visit_url", { ...currentJobData, visitTimestamp });
 
         timeUrlSent = Date.now();
+        io.sockets.emit("visit_url", { ...currentJobData, visitTimestamp });
+
         pendingJobs += config.num_clients;
 
 

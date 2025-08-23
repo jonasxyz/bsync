@@ -36,6 +36,9 @@ var harPathGlobal = null; // Stores the full local path to the HAR file
 var browserFinished = false;
 var proxyClosedPromise = null;
 let urlVisitErrorOccurred = false; // Added to track URL visit errors
+let iterationCompletedEmitted = false; // Prevent duplicate ITERATION_DONE emission per URL
+let visitTimestampMs = null; // Visit timestamp from scheduler (ms since epoch)
+let measuredFirstRequestAfterMs = undefined; // Measured by proxy relative to visit
 
 module.exports =
 {
@@ -183,172 +186,84 @@ module.exports =
             // Split output into individual lines and add prefix to each line
             const lines = data.toString().trim().split('\n');
             for (const line of lines) {
-                if (line.trim()) { // Leere Zeilen überspringen
-                    console.log(colorize("BROWSER: ", "yellow") + line);
+                if (!line.trim()) { // Skip empty lines
+                    continue;
+                }
+                console.log(colorize("BROWSER: ", "yellow") + line);
 
-                    if (line.includes("URL_ERROR")) {
-                        urlVisitErrorOccurred = true;
-                        // URL_DONE will likely follow or might not, depending on script logic
-                        // We primarily rely on BROWSER_FINISHED to proceed with HAR handling
+                // --- Signal Processing ---
+                if (line.startsWith("URL_DONE")) {
+                    let timestampRequestToDone = new Date().toISOString();
+                    const elapsedSeconds = (new Date(timestampRequestToDone) - timestampFirstRequest) / 1000;
+                    console.log(colorize("TIMESTAMP:", "cyan") + " Timestamp of URL_DONE: " + timestampRequestToDone);
+                    console.log(colorize("TIMESTAMP:", "cyan") + " Elapsed time since first request: " + elapsedSeconds.toFixed(2) + " seconds");
+                    process.emit('scriptUrlDoneRelay');
+                    console.log(colorize("SOCKETIO:", "cyan") + " Sending URL_DONE (via process event)");
+                } else if (line.includes("BROWSER_FINISHED")) {
+                    if (iterationCompletedEmitted) {
+                        if (PROXY_DEBUG_OUTPUT) {
+                            console.log(colorize("DEBUG:", "gray") + " Duplicate BROWSER_FINISHED ignored");
+                        }
+                        continue;
                     }
-                }
-            }
+                    iterationCompletedEmitted = true;
+                    browserFinished = true;
+                    let processingError = null;
+                    let finalHarPath = null;
 
-            if (data.toString().includes("BROWSER_FINISHED")) {  // TODO im not waiting for browser finished, espiavvaly for openwpm important
-                browserFinished = true;
-                let processingError = null;
-                let finalHarPath = null;
+                    console.log(colorize("BROWSER: ", "yellow") + "Browser finished, waiting for HAR file processing");
 
-                console.log(colorize("BROWSER: ", "yellow") + "Browser finished, waiting for HAR file processing");
+                    // Start HAR file processing and wait for completion then send ITERATION_DONE
 
-                // Start HAR file processing and wait for completion then send ITERATION_DONE
-                try {
-                    finalHarPath = await this.handleHarFile(); // Get the final HAR path
-                    console.log(colorize("STATUS:", "green") + " HAR file processing completed");
-                    
-                    // console.log(colorize("SOCKETIO:", "cyan") + " Sending ITERATION_DONE"); // Old direct emit
-                    // await socket.emit("ITERATION_DONE"); // Old direct emit
-                } catch (error) {
-                    console.error(colorize("ERROR: ", "red") + "Error processing HAR file:", error);
-                    processingError = error.message ? error.message : "Unknown HAR processing error";
-                    // Send ITERATION_DONE despite error, with error information
-                    // console.log(colorize("SOCKETIO:", "cyan") + " Sending ITERATION_DONE despite error"); // Old direct emit
-                    // await socket.emit("ITERATION_DONE"); // Old direct emit
-                }
-
-                const iterationData = {
-                    harPath: finalHarPath, // This will be null if handleHarFile failed before path determination
-                    urlVisitError: urlVisitErrorOccurred,
-                    processingError: processingError
-                };
-                process.emit('scriptIterationDone', iterationData);
-                console.log(colorize("INFO:", "gray") + " Emitted scriptIterationDone event with data: ", iterationData);
-                console.log("\n---------------------------------------------------\n");
-
-
-                // socket.emit("ITERATION_DONE"); 19.11
-                // console.log("\x1b[36mSOCKETIO:\x1b[0m Sending ITERATION_DONE");  
-                
-                
-                // console.log("\x1b[33mBROWSER: \x1b[0m" + "Browser finished, checking proxy status");
-                // if (proxy && proxy.pid) {
-                //     proxy.on("close", () => {
-                //         console.log("Proxy closed, sending ITERATION_DONE");
-                //         console.log("\x1b[36mSOCKETIO:\x1b[0m Sending ITERATION_DONE");
-                //     });
-                // } else {
-                //     console.log("Proxy already closed, sending ITERATION_DONE");
-                // }
-                // await socket.emit("ITERATION_DONE");
-                // browser.stdin.write("check_browser_ready\n");
-
-                // Kill proxy if it is still running
-
-            
-                // Wait for both conditions
-                // if (proxyClosedPromise) {
-                //     await proxyClosedPromise;
-                // }
-
-                // export har hier machen irgendwelche vorteile?
-                // vielleicht in zukunft hier den übertrag der dateien auf zentralen speicher machen
-                
-                // console.log("\x1b[36mSOCKETIO:\x1b[0m Sending ITERATION_DONE");
-                // await socket.emit("ITERATION_DONE");
-                
-                // Reset flags for next iteration
-                browserFinished = false;
-                proxyClosedPromise = null;
-
-            }
-            if (data.toString().includes("browser_ready")) {
-
-                // socket.emit("browser_ready", worker.client_name); // Old direct emit
-                process.emit('scriptBrowserReadyRelay', worker.client_name);
-                console.log(colorize("SOCKETIO:", "cyan") + " Sending browser_ready (via process event)");
-                //console.log("Browser ready for visiting URL");
-
-                // debug: Check har flows
-                //this.getHarFlows1();
-
-            }if (data.toString().includes("URL_DONE")) { 
-
-                let timestampRequestToDone = new Date().toISOString();
-                const elapsedSeconds = (new Date(timestampRequestToDone) - timestampFirstRequest) / 1000;
-                console.log(colorize("TIMESTAMP:", "cyan") + " Timestamp of URL_DONE: " + timestampRequestToDone);
-                console.log(colorize("TIMESTAMP:", "cyan") + " Elapsed time since first request: " + elapsedSeconds.toFixed(2) + " seconds");
-                // socket.emit("URL_DONE"); // Old direct emit
-                process.emit('scriptUrlDoneRelay');
-                console.log(colorize("SOCKETIO:", "cyan") + " Sending URL_DONE (via process event)");     
-
-                // await this.setHarDumpPath(visitedUrl);
-                
-                // await exportHar();
-
-                // await waitForHarFile(harPathGlobal);  // todo eigentlich hier jetzt browser oder iteration finished
-                // // vl warten fur browser finished und dann hier eine iteration_done senden
-
-                // if (baseConfig.nfs_remote_filestorage) {
-                //     await saveHarToNfs(visitedUrl);
-                // }
-
-                //this.handleHarFile();
-
-                // Moved HAR file processing to browser_finished
-
-                
-                
-            }
-            if (data.toString().includes("CRAWLER_ENV_INFO") && !dataGathered) { // todo
-
-                dataGathered = true;
-                console.log(colorize("STATUS:", "green") + " Gathering crawl environment info");     
-
-                // Extract the JSON data after "CRAWLER_ENV_INFO "
-                const dataString = data.toString();
-                console.log(colorize("BROWSER: ", "yellow") + dataString); // debug Log the raw data for inspection
-
-                // Extract only the JSON part following "CRAWLER_ENV_INFO "
-                // const jsonDataMatch = dataString.match(/CRAWLER_ENV_INFO (.+)/);
-                // if (jsonDataMatch) {
-                //     const jsonData = jsonDataMatch[1].trim(); // Get the matched JSON data portion
-                //     try {
-                //         const parsedData = JSON.parse(jsonData); // Parse JSON only
-                //         crawlEnvInfo.gatherEnvironmentInfo(parsedData); // Pass parsed data to the function
-                //     } catch (error) {
-                //         console.error('Failed to parse JSON data:', error);
-                //     }
-                // }
-
-                // Split the data string to extract the JSON data
-                // const jsonData = dataString.split("CRAWLER_ENV_INFO ")[1].trim();
-                // try {
-                //     const parsedData = JSON.parse(jsonData);
-                //     gatherCrawlEnvInfo(parsedData); // Pass the parsed data to gatherCrawlEnvInfo
-                // crawlEnvInfo.gatherEnvironmentInfo(parsedData); // Pass parsed data to the function
-
-                // } catch (error) {
-                //     console.error('Failed to parse JSON data:', error);
-                // }
-                    // Extract only the JSON part following "CRAWLER_ENV_INFO "
-                    
-                const jsonDataMatch = dataString.match(/CRAWLER_ENV_INFO (.+?)(?=\n|$)/);
-                if (jsonDataMatch) {
-                    const jsonData = jsonDataMatch[1].trim(); // Get the matched JSON data portion
                     try {
-                        const parsedData = JSON.parse(jsonData); // Parse JSON only
-                        // Todo add crawlEnvInfo functionality
-                        //gatherCrawlEnvInfo(parsedData); // Pass the parsed data to gatherCrawlEnvInfo 
-                        //crawlEnvInfo.gatherEnvironmentInfo(parsedData); // Pass parsed data to the function
+                        finalHarPath = await this.handleHarFile();
+                        console.log(colorize("STATUS:", "green") + " HAR file processing completed");
                     } catch (error) {
-                        console.error(colorize("ERROR: ", "red") + 'Failed to parse JSON data:', error);
+                        console.error(colorize("ERROR: ", "red") + "Error processing HAR file:", error);
+                        processingError = error.message ? error.message : "Unknown HAR processing error";
                     }
-                } else {
-                    console.error(colorize("ERROR: ", "red") + 'No valid JSON data found after CRAWLER_ENV_INFO');
+
+                    const iterationData = {
+                        harPath: finalHarPath,
+                        urlVisitError: urlVisitErrorOccurred,
+                        processingError: processingError,
+                        firstRequestAfterMs: measuredFirstRequestAfterMs
+                    };
+                    process.emit('scriptIterationDone', iterationData);
+                    console.log(colorize("INFO:", "gray") + " Emitted scriptIterationDone event with data: ", iterationData);
+                    console.log("\n---------------------------------------------------\n");
+                    
+                    // Reset flags for next iteration
+                    browserFinished = false;
+                    proxyClosedPromise = null;
+                } else if (line.includes("browser_ready")) {
+                    process.emit('scriptBrowserReadyRelay', worker.client_name);
+                    console.log(colorize("SOCKETIO:", "cyan") + " Sending browser_ready (via process event)");
+
+                } else if (line.includes("URL_ERROR")) {
+                    urlVisitErrorOccurred = true;
+
+                } else if (line.includes("CRAWLER_ENV_INFO") && !dataGathered) { // todo
+                    dataGathered = true;
+                    console.log(colorize("STATUS:", "green") + " Gathering crawl environment info");
+                    const dataString = line; // Use the current line
+                    console.log(colorize("BROWSER: ", "yellow") + dataString); // debug Log the raw data for inspection
+                    const jsonDataMatch = dataString.match(/CRAWLER_ENV_INFO (.+?)(?=\n|$)/);
+                    if (jsonDataMatch) {
+                        const jsonData = jsonDataMatch[1].trim(); // Get the matched JSON data portion
+                        try {
+                            const parsedData = JSON.parse(jsonData); // Parse JSON only
+                            //crawlEnvInfo.gatherEnvironmentInfo(parsedData); // Pass parsed data to the function
+                        } catch (error) {
+                            console.error(colorize("ERROR: ", "red") + 'Failed to parse JSON data:', error);
+                        }
+                    } else {
+                        console.error(colorize("ERROR: ", "red") + 'No valid JSON data found after CRAWLER_ENV_INFO');
+                    }
                 }
             }
-            
-        })
+        });
+
 
         browser.stderr.on("data", (err) => {
             var err1 = err.toString();
@@ -421,9 +336,12 @@ module.exports =
     sendVisitUrlCommand: async function (IterationConfig) {
         visitedUrl = IterationConfig.clearUrl; // Store for handleHarFile and NFS export
         visitedUrlIndex = IterationConfig.urlIndex; // Store the URL index (1-based)
-        totalUrls = IterationConfig.totalUrls; // Store total URLs for formatting
+        totalUrls = IterationConfig.totalUrls; // Store the total number of URLs for formatting
         timestampFirstRequest = new Date(); // Record time for duration calculation
         urlVisitErrorOccurred = false; // Reset error flag for new URL
+        iterationCompletedEmitted = false; // Reset duplicate guard for new iteration
+        measuredFirstRequestAfterMs = undefined; // Reset measured first request
+        visitTimestampMs = IterationConfig.visitTimestamp ? Date.parse(IterationConfig.visitTimestamp) : null;
         
         // Clear previous flows from proxy before visiting the new URL
         await this.clearHarFlows();
@@ -1232,7 +1150,16 @@ function processProxyIpcMessage(jsonString) {
 
             case "first_request_detected":
                 console.log(colorize("MITMPROXY:", "magenta") + ` First request detected: ${data.method} ${data.url}`);
-                //timestampFirstRequest = new Date();
+                // Compute delta from scheduler-provided visit timestamp if available
+                try {
+                    const reqTsMs = (data && typeof data.timestamp === 'number') ? Math.round(data.timestamp * 1000) : null;
+                    if (visitTimestampMs && reqTsMs && reqTsMs >= visitTimestampMs) {
+                        measuredFirstRequestAfterMs = reqTsMs - visitTimestampMs;
+                        if (PROXY_DEBUG_OUTPUT) {
+                            console.log(colorize("DEBUG:", "gray") + ` Measured first request after: ${measuredFirstRequestAfterMs} ms`);
+                        }
+                    }
+                } catch (e) { /* ignore */ }
                 break;
 
             case "flows_cleared":

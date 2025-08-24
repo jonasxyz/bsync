@@ -180,6 +180,39 @@ class WaitForDoneCommand(BaseCommand):
         return False
 
 
+class SleepCommand(BaseCommand):
+    """A custom command that pauses execution for a specified duration."""
+    
+    def __init__(self, duration: float):
+        self.duration = duration
+    
+    def __repr__(self):
+        return f"SleepCommand(duration={self.duration})"
+    
+    def execute(self, webdriver, browser_params, manager_params, extension_socket):
+        """Pauses execution for the specified duration in seconds."""
+        if self.duration > 0:
+            log_message(f"Pausing for {self.duration} seconds.", "DEBUG")
+            time.sleep(self.duration)
+
+
+class SignalCommand(BaseCommand):
+    """A custom command to send a signal to stdout."""
+    
+    def __init__(self, signal: str):
+        self.signal = signal
+
+    def __repr__(self):
+        return f"SignalCommand(signal='{self.signal}')"
+
+    def execute(self, webdriver, browser_params, manager_params, extension_socket):
+        """Sends the specified signal string to stdout."""
+        if self.signal:
+            sys.stdout.write(f"{self.signal}\n")
+            sys.stdout.flush()
+            log_message(f"Sent signal: {self.signal}", "DEBUG")
+
+
 def log_message(message, level="INFO"):
     """Helper function for structured logging."""
     sys.stdout.write(f"[{level}] {message}\n")
@@ -411,7 +444,7 @@ class OpenWPMCrawler:
             log_message(f"Waiting {wait_time}ms before URL visit")
             sleep(wait_time / 1000)
         
-        # Create inline callback
+        # Create inline callback, this now only handles the final BROWSER_FINISHED signal
         def callback(success: bool, error_info: dict = None) -> None:
             if success:
                 log_message(f"URL {url} visited successfully")
@@ -419,22 +452,24 @@ class OpenWPMCrawler:
 
                 # URL_DONE is no longer sent here.
                 # It is now sent by WaitForDoneCommand to ensure accurate timing.
-                sys.stdout.write(f"URL_DONE {url}\n")
-                sys.stdout.flush()
+                #sys.stdout.write(f"URL_DONE {url}\n")
+                #sys.stdout.flush()
             else:
                 if error_info:
                     error_type = error_info.get("error_type", "unknown")
                     error_text = error_info.get("error_text", "")
-                    log_message(f"Error visiting {url}: {error_type} - {error_text}", "ERROR")
                     print(f"CommandSequence for {url} ran unsuccessfully: {error_type}")
+                    log_message(f"Error in CommandSequence for {url}: {error_type} - {error_text}", "ERROR")
                     
                     # Output specific error information for the controlling script
+                    sys.stdout.write(f"URL_ERROR\n") # Generic error signal
                     sys.stdout.write(f"ERROR_TYPE:{error_type}\n")
                     sys.stdout.write(f"ERROR_TEXT:{error_text}\n")
                     sys.stdout.flush()
                 else:
-                    log_message(f"Error visiting {url}", "ERROR")
                     print(f"CommandSequence for {url} ran unsuccessfully")
+                    log_message(f"Unknown error in CommandSequence for {url}", "ERROR")
+                    sys.stdout.write(f"URL_ERROR\n") 
             
             sys.stdout.write("BROWSER_FINISHED\n")
             sys.stdout.flush()
@@ -448,13 +483,30 @@ class OpenWPMCrawler:
         )
         
         # Add GetCommand
+        #command_sequence.append_command(
+        #   GetCommand(url=url, sleep=0), # sleep is now 0
+        #   timeout=VISIT_PAGE_TIMEOUT
+        #)
+
+        # 1. Load the page (without sleeping)
         command_sequence.append_command(
-           GetCommand(url=url, sleep=visit_duration), 
+           GetCommand(url=url, sleep=0), # sleep is now 0
            timeout=VISIT_PAGE_TIMEOUT
         )
-        #command_sequence.get(sleep=visit_duration, timeout=VISIT_PAGE_TIMEOUT)
 
-        # Add screenshot command if path is provided
+        # 2. Pause for the specified visit duration
+        command_sequence.append_command(
+            SleepCommand(duration=visit_duration),
+            timeout=visit_duration + 5 # Timeout slightly longer than duration
+        )
+
+        # 3. Send URL_DONE signal after waiting
+        command_sequence.append_command(
+            SignalCommand(signal=f"URL_DONE {url}"),
+            timeout=5
+        )
+
+        # 4. Add screenshot command if path is provided
         if self.args.screenshotpath:
             screenshot_path = Path(self.args.screenshotpath)
             command_sequence.append_command(
@@ -472,7 +524,7 @@ class OpenWPMCrawler:
         
         log_message(f"Visiting URL: {url}")
         
-        # Execute
+        # Execute the full sequence
         self.manager.execute_command_sequence(command_sequence)
         
         # URL_DONE Signal moved to callback function for proper timing

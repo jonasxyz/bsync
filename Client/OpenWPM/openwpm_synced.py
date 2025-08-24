@@ -38,10 +38,6 @@ from openwpm.commands.utils.webdriver_utils import wait_until_loaded
 # ===== CONFIGURATION =====
 # These variables can be adjusted directly in the script:
 
-# Screen resolution for browser window
-SCREEN_WIDTH = 800   # Default: 1366
-SCREEN_HEIGHT = 600   # Default: 768
-
 # Page Load Timeout for webdriver in seconds  
 PAGE_LOAD_TIMEOUT = 10  # Default: 30
 # If setting the webdriver timeout lower than the page load timeout, sites that timeout wont be counted as timeouts
@@ -239,10 +235,11 @@ class OpenWPMCrawler:
         self.crawling_in_progress = False # Add a flag to track crawl state
         
         # Configure screen resolution and page load timeout first
-        self.screen_width = getattr(self.args, 'screen_width', SCREEN_WIDTH)
-        self.screen_height = getattr(self.args, 'screen_height', SCREEN_HEIGHT)
+        self.screen_width = getattr(self.args, 'screen_width', None)
+        self.screen_height = getattr(self.args, 'screen_height', None)
         self.page_load_timeout = getattr(self.args, 'page_load_timeout', PAGE_LOAD_TIMEOUT)
         self.log_file_path = self.args.logfilepath
+        self.use_default_resolution = getattr(self.args, 'use_default_resolution', False)
         
         # Create configuration
         self.manager_params = ManagerParams(num_browsers=self.num_browsers)
@@ -329,8 +326,12 @@ class OpenWPMCrawler:
         
         
         # Set custom parameters for screen resolution and page load timeout
-        browser_param.custom_params['screen_width'] = self.screen_width
-        browser_param.custom_params['screen_height'] = self.screen_height
+        if not getattr(self, 'use_default_resolution', False) and self.screen_width and self.screen_height:
+            browser_param.custom_params['screen_width'] = self.screen_width
+            browser_param.custom_params['screen_height'] = self.screen_height
+            log_message(f"Using custom resolution {self.screen_width}x{self.screen_height}")
+        else:
+            log_message("Using OpenWPM default screen resolution")
         browser_param.custom_params['page_load_timeout'] = self.page_load_timeout
 
         # Configure screen resolution via Firefox preferences (fallback)
@@ -355,7 +356,10 @@ class OpenWPMCrawler:
             browser_param.prefs["browser.cache.offline.enable"] = False
             log_message("Firefox cache disabled (disk, memory, offline)")
         
-        log_message(f"Browser parameters configured - Resolution: {self.screen_width}x{self.screen_height}, Page load timeout: {self.page_load_timeout}s")
+        if getattr(self, 'use_default_resolution', False) or not (self.screen_width and self.screen_height):
+            log_message(f"Browser parameters configured - Default resolution, Page load timeout: {self.page_load_timeout}s")
+        else:
+            log_message(f"Browser parameters configured - Resolution: {self.screen_width}x{self.screen_height}, Page load timeout: {self.page_load_timeout}s")
     
     def _configure_proxy(self, browser_param):
         """Configures proxy settings."""
@@ -648,8 +652,8 @@ def main():
     parser.add_argument("--proxyhost", type=str, default=None)
     parser.add_argument("--proxyport", type=int, default=None)
 
-    parser.add_argument("--screen_width", type=int, default=SCREEN_WIDTH, help="Browser window width")
-    parser.add_argument("--screen_height", type=int, default=SCREEN_HEIGHT, help="Browser window height")
+    parser.add_argument("--screen_width", type=int, default=None, help="Browser window width; omit to use OpenWPM default")
+    parser.add_argument("--screen_height", type=int, default=None, help="Browser window height; omit to use OpenWPM default")
     parser.add_argument("--page_load_timeout", type=int, default=PAGE_LOAD_TIMEOUT, help="Page load timeout in seconds")
 
     parser.add_argument("--browserprofilepath", type=str, default=None, 
@@ -660,6 +664,8 @@ def main():
                         help="Path to save screenshots.")
     parser.add_argument("--enable_cache", action="store_true", default=False,
                         help="Enable Firefox cache (disk and memory, incl. offline). Disabled by default.")
+    parser.add_argument("--use_default_resolution", action="store_true", default=False,
+                        help="Do not set screen resolution; use OpenWPM's default.")
     
     args = parser.parse_args()
     crawler = OpenWPMCrawler(args)

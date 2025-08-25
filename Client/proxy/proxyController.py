@@ -71,7 +71,7 @@ class SaveHarCustom:
         self.include_payload: bool = False
         # If true, include CONNECT tunnel handshakes as HAR entries (not browser-visible HTTP).
         # Default False to match website/browser-level logging and OpenWPM http_instrument.
-        self.include_connect_flows: bool = False
+        self.include_connect_flows: bool = True
         # Page metadata for HAR pages
         self.current_page_url: str | None = None
         self.current_page_visit_ts: str | None = None  # ISO string

@@ -1,185 +1,107 @@
 # HAR-Analyse-Tool
 
-Dieses Tool analysiert HAR-Dateien (HTTP Archive), die von verschiedenen Crawl-Clients generiert wurden, und erstellt Berichte mit wichtigen Kennzahlen und Vergleichen zwischen den Clients.
+Dieses Tool analysiert HAR-Dateien (HTTP Archive) aus synchronisierten Crawls und erstellt strukturierte Berichte inkl. kompakter Übersicht (compactSummary) und detaillierten Client-Vergleichen.
 
 ## Funktionen
 
-- Analyse von HAR-Dateien aus einer strukturierten Verzeichnisstruktur
-- Extraktion wichtiger Kennzahlen wie:
-  - Anzahl der HTTP-Requests und Responses
-  - Anzahl der Errorcodes (4xx, 5xx)
-  - Vergleich der Request-URLs zwischen Clients
-- Generierung von Berichten in verschiedenen Formaten (JSON, HTML, CSV)
-- Ansprechende visuelle Darstellung der Ergebnisse in HTML-Berichten
+- Analyse einer Crawl-Verzeichnisstruktur (url/Client/*.har)
+- Extraktion zentraler Kennzahlen: Requests, Fehler (4xx/5xx), Statusgruppen, Media (Anzahl/Größe), Tracking (EasyPrivacy/EasyList)
+- Synchronisationsanalyse: Start→erste Anfrage je Client, Spread pro URL, Overlap/Skew je Client-Paar
+- Vergleich OpenWPM vs. nativer Firefox via frei konfigurierbarer Gruppierung
+- Export in JSON, HTML, CSV, JSONL (kompakte Zeilen je URL/Client und optional je URL/Paar)
+- Kompakte Zusammenfassung (`compactSummary`) direkt in der JSON-Ausgabe
 
 ## Installation
 
-1. Stelle sicher, dass Node.js (Version 14 oder höher) installiert ist
-2. Klone dieses Repository
-3. Installiere die Abhängigkeiten:
+1. Node.js 16+ installieren
+2. Abhängigkeiten installieren:
 
 ```bash
 cd harAnalysis
 npm install
 ```
 
-**Wichtiger Hinweis**: Das Tool benötigt die `@ghostery/adblocker` Bibliothek für erweiterte AdBlock-Funktionen. Falls die Installation fehlschlägt, installieren Sie die Abhängigkeiten manuell:
-
-```bash
-npm install @ghostery/adblocker commander chart.js
-```
-
-4. (Optional) Teste die AdBlock-Erkennung (EasyPrivacy/EasyList):
-
-```bash
-npm test
-```
+Hinweis: Für Tracking-/Ads-Klassifikation wird `@ghostery/adblocker` verwendet.
 
 ## Verwendung
 
-Das Tool kann über die Kommandozeile mit verschiedenen Optionen aufgerufen werden:
-
 ```bash
-node Client/harAnalysis.js [Optionen]
+node harAnalysis/harAnalysis.js [Optionen]
 ```
 
-### Optionen
+### Wichtige Optionen
 
-- `-d, --crawl-dir <dir>`: Verzeichnis mit HAR-Dateien (Crawl-Ordner)
-- `-o, --output-dir <dir>`: Ausgabeverzeichnis für Berichte
-- `-f, --format <format>`: Ausgabeformat (json, html, csv oder all)
-- `--no-adblock`: AdBlock-Analyse deaktivieren
-- `--no-captcha`: CAPTCHA-Erkennung deaktivieren
-- `--no-media`: Medienanalyse deaktivieren
-- `-v, --verbose`: Ausführliche Ausgabe
-- `-h, --help`: Hilfe anzeigen
-- `-V, --version`: Version anzeigen
+- `-d, --crawl-dir <dir>`: Crawl-Ordner (erwartete Struktur siehe unten)
+- `-o, --output-dir <dir>`: Ausgabeverzeichnis
+- `-f, --format <fmt>`: `json|html|csv|jsonl|all`
+- `--disable-adblock`: Tracking-/Ads-Analyse deaktivieren
+- `--disable-media`: Medienanalyse deaktivieren
+- `--normalize-urls`: Query-Werte entfernen (reduziert Rauschen)
+- `--include-requests-in-json`: Request-Listen in JSON belassen
+- Kompakt-/Gruppierungs-Optionen:
+  - `--compact-anonymize <none|domain|hash>`
+  - `--compact-include-pairs`
+  - `--compact-max-urls <n>`, `--compact-top-pairs <n>`
+  - `--compact-top-pairs-by <abs_request_diff|ttfr_abs_diff>`
+  - `--group-a-label <label>`, `--group-a-pattern <regex>`
+  - `--group-b-label <label>`, `--group-b-pattern <regex>`
+  - `--significant-top-n <n>`, `--significant-min-abs-request-diff <n>`
+  - `--failed-urls-max-list <n>`
+- `-v, --verbose`
 
 ### Beispiele
 
-Analyse eines Crawl-Verzeichnisses mit Standardoptionen:
-
 ```bash
-node Client/harAnalysis.js -d /pfad/zum/crawl/verzeichnis
+node harAnalysis/harAnalysis.js -d ./Crawl_2025-08-09_09-32-26 -o ./harAnalysis/analysis_results -f json
+node harAnalysis/harAnalysis.js -d ./Crawl_... -o ./harAnalysis/analysis_results -f all --normalize-urls --compact-include-pairs
 ```
 
-Analyse mit spezifischem Ausgabeverzeichnis und Format:
-
-```bash
-node Client/harAnalysis.js -d /pfad/zum/crawl/verzeichnis -o /pfad/zum/ausgabe/verzeichnis -f html
-```
-
-Analyse mit deaktivierter CAPTCHA-Erkennung und ausführlicher Ausgabe:
-
-```bash
-node Client/harAnalysis.js -d /pfad/zum/crawl/verzeichnis --no-captcha -v
-```
-
-## Verzeichnisstruktur
-
-Das Tool erwartet die folgende Verzeichnisstruktur:
+## Erwartete Verzeichnisstruktur
 
 ```
-crawl_ordner/
-├── url_ordner_1/
-│   ├── client_ordner_1/
-│   │   └── har_datei.har
-│   └── client_ordner_2/
-│       └── har_datei.har
-└── url_ordner_2/
-    ├── client_ordner_1/
-    │   └── har_datei.har
-    └── client_ordner_2/
-        └── har_datei.har
+<crawl_dir>/
+├─ 001_domain_com/
+│  ├─ OpenWPM/
+│  │  └─ *.har
+│  └─ native_firefox/
+│     └─ *.har
+└─ 002_domain_com/
+   └─ ...
 ```
 
-- `crawl_ordner`: Hauptverzeichnis für einen Crawl
-- `url_ordner`: Verzeichnis für eine bestimmte URL (benannt nach der URL)
-- `client_ordner`: Verzeichnis für einen bestimmten Client
-- `har_datei.har`: HAR-Datei für die URL und den Client
+## Ausgaben
 
-## Ausgabe
+- `analysis_report_<timestamp>.json` (enthält `overview`, `compactSummary`, `urlComparisons`, `clientSummary`, `overallSummary`)
+- `analysis_report_<timestamp>.html` (interaktiver Vergleichsbericht)
+- `analysis_summary_<timestamp>.csv` (tidy: eine Zeile je URL/Client)
+- `analysis_report_<timestamp>.jsonl` (kompakte Zeilen; optional inkl. Paar-Diffs)
 
-Das Tool generiert verschiedene Ausgabedateien im angegebenen Ausgabeverzeichnis:
+### compactSummary (Auszug)
 
-- `detailed_analysis_[timestamp].json`: Detaillierte Analyseergebnisse im JSON-Format
-- `detailed_analysis_[timestamp].html`: Detaillierter Bericht im HTML-Format
-- `client_comparison_[timestamp].json`: Client-Vergleichsergebnisse im JSON-Format
-- `client_comparison_[timestamp].html`: Client-Vergleichsbericht im HTML-Format
-- `client_summary_[timestamp].csv`: Zusammenfassung der Client-Statistiken im CSV-Format
-
-## Analysierte Kennzahlen
-
-Das Tool extrahiert und vergleicht die folgenden Kennzahlen aus den HAR-Dateien:
-
-### Grundlegende Kennzahlen
-- **Anzahl der HTTP-Requests**: Gesamtzahl der Anfragen pro URL und Client
-- **Anzahl der Responses nach Status-Code**: Verteilung der Antworten nach HTTP-Status-Code (2xx, 3xx, 4xx, 5xx)
-- **Anzahl der Fehler**: Summe der 4xx- und 5xx-Fehler
-- **Timing-Metriken**: Ladezeiten, Antwortzeiten, etc.
-
-### Erweiterte Kennzahlen (optional)
-- **Tracking-Analyse**: Vollständige EasyList-Unterstützung mit @ghostery/adblocker
-  - Kosmetische Regeln (Element-Hiding)
-  - Komplexe ABP-Optionen ($image, $third-party, $script, $domain=...)
-  - Kategorisierung von Anfragen (Tracker, Werbung, etc.)
-  - Detaillierte Analyse pro Request-Typ
-- **Medienanalyse**: Anzahl und Größe von Bildern, Videos, etc.
-
-### Vergleichsmetriken
-- **Request-Differenz**: Unterschied in der Anzahl der Anfragen zwischen Clients
-- **Fehler-Differenz**: Unterschied in der Anzahl der Fehler zwischen Clients
-- **Einzigartige Request-URLs**: URLs, die nur von einem Client angefragt wurden
-
-## Technische Details
-
-Das Tool besteht aus den folgenden Hauptkomponenten:
-
-- **harAnalysis.js**: Hauptskript mit Kommandozeilen-Interface
-- **harAnalyzer.js**: Klasse zur Analyse von HAR-Dateien und Generierung von Berichten
-- **adBlockLists.js**: Lädt EasyList (Ads) und EasyPrivacy (Tracking) via `@ghostery/adblocker`,
-  cached die Engines und bietet Match-APIs (inkl. HAR-Unterstützung).
-
-### Tracking-Zählung (EasyPrivacy vs. EasyList)
-
-- Tracking-Anfragen basieren auf EasyPrivacy-Regeln und werden separat gezählt (`trackingRequests.total`).
-- Werbe-Anfragen (EasyList) werden in `trackingRequests.adsTotal` geführt und nicht in `trackingRequests.total` eingerechnet.
-  Details siehe `harAnalyzer._analyzeTrackingRequests()`.
-
-## Troubleshooting
-
-### Häufige Fehler
-
-**1. `fs is not defined` Fehler:**
+```json
+{
+  "compactSummary": {
+    "synchronization_delta_ms": { "n": 254, "median": 23, "max": 5070 },
+    "intra_group": { "OpenWPM": { "requests": {"median": 0} }, "FirefoxNative": { ... } },
+    "inter_group_abs_diff": { "requests": { "median": 1, "p95": 53.35 } },
+    "outliers": [ { "url": "071_x_com", "metric": "requests", "diff": 119.5 } ]
+  }
+}
 ```
-ReferenceError: fs is not defined
-```
-- **Lösung**: Stellen Sie sicher, dass alle Dateien die neuesten Versionen sind. Der `fs`-Import wurde in `adBlockLists.js` hinzugefügt.
 
-**2. `getFiltersCount is not a function` Fehler:**
-```
-TypeError: this.engine.getFiltersCount is not a function
-```
-- **Lösung**: Die Ghostery AdBlock Engine API wurde angepasst. Verwenden Sie die neueste Version der Dateien.
+## Hinweise zur Tracking-/Ads-Klassifikation
 
-**3. Netzwerkfehler beim Laden der Filterlisten:**
-```
-Failed to load AdBlock rules: Error: Request timeout
-```
-- **Lösung**: 
-  - Überprüfen Sie Ihre Internetverbindung
-  - Versuchen Sie es später erneut (Server könnte temporär nicht verfügbar sein)
-  - Das Tool verwendet automatisch Cache-Dateien als Fallback
+- EasyPrivacy/EasyList via `@ghostery/adblocker`
+- Konservative Schätzung: Ohne vollständigen Kontext (z.B. `$third-party`, `$domain`) kann Untererfassung auftreten
 
-**4. Installation der @ghostery/adblocker fehlgeschlagen:**
-- **Lösung**: Installieren Sie die Abhängigkeit manuell:
-  ```bash
-  npm install @ghostery/adblocker --save
-  ```
+## Limitationen
 
-### Debug-Modus
+- Dynamische Inhalte (WS, DOM) sind nur indirekt über HAR sichtbar
+- Synchronisation ist sehr eng, aber nicht perfekt simultan (seltene Ausreißer möglich)
+- Ergebnisse sind vergleichend zu interpretieren; keine absoluten Aussagen zur „Erkennung“ ohne tieferen Request-/Cookie-/Header-Vergleich
 
-Verwenden Sie den `-v` (verbose) Flag für detaillierte Ausgaben:
-```bash
-node harAnalysis.js -d /pfad/zu/crawl/verzeichnis -v
-```
+## Troubleshooting (Kurz)
+
+- Installation schlägt fehl: `npm install @ghostery/adblocker commander chart.js`
+- Keine HARs gefunden: Pfad/Struktur prüfen (`--crawl-dir`)
+- Leere Tracking-Werte: `--disable-adblock` entfernen oder Internetzugang für Regeln sicherstellen

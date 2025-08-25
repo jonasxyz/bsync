@@ -1,6 +1,7 @@
 // adBlockLists.js (CommonJS, Node >=14)
 // Lädt EasyList (Ads) + EasyPrivacy (Tracking) mit @ghostery/adblocker,
 // cached die kompilierten Engines als .bin und stellt einfache Match-APIs bereit.
+// using:   https://www.npmjs.com/package/@ghostery/adblocker
 
 const fs = require('fs');
 const path = require('path');

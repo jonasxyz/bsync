@@ -19,6 +19,6 @@
   "dependencies": {
     "commander": "^9.4.1",
     "chart.js": "^3.9.1",
-    "@ghostery/adblocker": "^1.26.16"
+    "@ghostery/adblocker": "^2.11.5"
   }
 } 

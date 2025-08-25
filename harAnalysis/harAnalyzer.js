@@ -13,6 +13,18 @@ class HarAnalyzer {
       normalizeUrls: false,
       verbose: false, // Default verbose to false
       includeRequestsInJson: false, // Default to false
+      // Compact export options
+      compactAnonymize: 'none', // 'none' | 'domain' | 'hash'
+      compactIncludePairs: false,
+      compactMaxUrls: undefined, // number
+      compactTopPairs: undefined, // number
+      compactTopPairsBy: 'abs_request_diff', // 'abs_request_diff' | 'ttfr_abs_diff'
+      // Grouping and significance
+      groupA: { label: 'OpenWPM', pattern: 'openwpm' },
+      groupB: { label: 'FirefoxNative', pattern: 'firefox|native' },
+      significantTopN: 50,
+      significantMinAbsRequestDiff: 10,
+      failedUrlsMaxList: 200,
       ...options
     };
     
@@ -163,6 +175,8 @@ class HarAnalyzer {
             // Wir nehmen die erste HAR-Datei (normalerweise sollte nur eine pro URL/Client sein)
             const harFilePath = path.join(clientPath, harFiles[0]);
             const metrics = await this.analyzeHarFile(harFilePath);
+            // Anzahl HAR-Dateien für diesen URL/Client mit aufnehmen
+            metrics.harFilesCount = harFiles.length;
             
             // Metriken für diese URL und diesen Client speichern
             results.urls[urlDir].clients[clientDir] = metrics;
@@ -175,7 +189,10 @@ class HarAnalyzer {
                 urlsAnalyzed: 0,
                 statusCodes: {},
                 trackingStats: { total: 0, adsTotal: 0 },
-                mediaStats: { total: 0, size: 0 }
+                mediaStats: { total: 0, size: 0 },
+                // HAR-Aggregation
+                harFilesFound: 0,
+                urlsWithHarFiles: 0
               };
             }
             
@@ -184,6 +201,9 @@ class HarAnalyzer {
               results.clients[clientDir].totalRequests += metrics.totalRequests || 0;
               results.clients[clientDir].totalErrors += metrics.totalErrors || 0;
               results.clients[clientDir].urlsAnalyzed++;
+              // HAR-Aggregate aktualisieren
+              results.clients[clientDir].harFilesFound += metrics.harFilesCount || 0;
+              results.clients[clientDir].urlsWithHarFiles += 1;
 
               // Tracking- und Media-Statistiken aggregieren
               if (metrics.trackingRequests) {
@@ -606,7 +626,11 @@ class HarAnalyzer {
               }
             }
           }
-          fs.writeFileSync(outputPath, JSON.stringify(dataToWrite, null, 2));
+          // Reicher die JSON-Ausgabe um Crawl-Overview und kompakte Zusammenfassung an (Summary-Metadaten)
+          const overview = this._buildCrawlOverview(results);
+          const compactSummary = this._buildCompactSummary(results);
+          const enriched = { overview, compactSummary, ...dataToWrite };
+          fs.writeFileSync(outputPath, JSON.stringify(enriched, null, 2));
           break;
         case 'csv':
           const csv = this._convertToCSV(results);
@@ -615,6 +639,15 @@ class HarAnalyzer {
         case 'html':
           const html = this._generateHtmlReport(results);
           fs.writeFileSync(outputPath, html);
+          break;
+        case 'jsonl':
+          {
+            // Build compact records and stream as JSONL
+            const rows = this._buildCompactRows(results);
+            const overviewRow = this._buildCrawlOverview(results, { asRow: true });
+            const jsonl = [overviewRow, ...rows].filter(Boolean).map(r => JSON.stringify(r)).join('\n');
+            fs.writeFileSync(outputPath, jsonl);
+          }
           break;
         default:
           throw new Error(`Nicht unterstütztes Format: ${format}`);
@@ -644,6 +677,463 @@ class HarAnalyzer {
     
     // If no pages and no entries, we cannot determine the URL
     return null;
+  }
+
+  /**
+   * Erzeugt kompakte Zeilen (Records) aus Vergleichsergebnissen
+   * - eine Zeile pro (URL, Client)
+   * - optional zusätzliche Zeilen pro (URL, Paar)
+   */
+  _buildCompactRows(results) {
+    // Erwartet Vergleichsergebnisse (compareClientResults)
+    const isComparison = !!results && results.urlComparisons !== undefined;
+    if (!isComparison) {
+      return [];
+    }
+
+    const opts = this.options;
+    const urlEntries = Object.entries(results.urlComparisons || {});
+
+    // Optional: begrenzen der Anzahl URLs
+    let limitedUrlEntries = urlEntries;
+    if (typeof opts.compactMaxUrls === 'number' && opts.compactMaxUrls > 0) {
+      limitedUrlEntries = urlEntries.slice(0, opts.compactMaxUrls);
+    }
+
+    const perClientRows = [];
+    const pairRows = [];
+
+    // Helper to anonymize URL string
+    const anonymizeUrl = (u) => {
+      if (!u) return '';
+      switch (opts.compactAnonymize) {
+        case 'domain':
+          return this._extractDomain(u) || u;
+        case 'hash':
+          return this._stableHashId(u);
+        case 'none':
+        default:
+          return u;
+      }
+    };
+
+    // Helper to bin status codes to groups
+    const toBins = (responsesByCode) => {
+      const bins = { s2xx: 0, s3xx: 0, s4xx: 0, s5xx: 0 };
+      if (responsesByCode) {
+        for (const [codeStr, count] of Object.entries(responsesByCode)) {
+          const code = Number(codeStr);
+          if (code >= 200 && code < 300) bins.s2xx += count;
+          else if (code >= 300 && code < 400) bins.s3xx += count;
+          else if (code >= 400 && code < 500) bins.s4xx += count;
+          else if (code >= 500 && code < 600) bins.s5xx += count;
+        }
+      }
+      return bins;
+    };
+
+    // Build per-client rows
+    for (const [urlKey, comp] of limitedUrlEntries) {
+      const urlValue = anonymizeUrl(urlKey);
+      for (const [clientName, m] of Object.entries(comp.clients || {})) {
+        if (!m || m.error) continue;
+        const bins = toBins(m.responsesByCode);
+        const row = {
+          type: 'client',
+          url: urlValue,
+          client: clientName,
+          requests: m.totalRequests || 0,
+          errors: m.totalErrors || 0,
+          ttfr_ms: m.sync?.firstRequestOffsetMs ?? 0,
+          tracking_reqs: m.trackingRequests?.total || 0,
+          ads_reqs: m.trackingRequests?.adsTotal || 0,
+          media_total: m.mediaFiles?.total || 0,
+          media_size: m.mediaFiles?.size || 0,
+          status_2xx: bins.s2xx,
+          status_3xx: bins.s3xx,
+          status_4xx: bins.s4xx,
+          status_5xx: bins.s5xx,
+        };
+        perClientRows.push(row);
+      }
+    }
+
+    // Build pair rows (optional)
+    if (opts.compactIncludePairs) {
+      for (const [urlKey, comp] of limitedUrlEntries) {
+        const urlValue = anonymizeUrl(urlKey);
+        const diffs = comp;
+        const addPair = (pairKey, fields) => {
+          pairRows.push({ type: 'pair', url: urlValue, pair: pairKey, ...fields });
+        };
+        // request, error, tracking, ads, media diffs
+        for (const [pairKey, requestDiff] of Object.entries(diffs.requestDifferences || {})) {
+          const errorDiff = (diffs.errorDifferences || {})[pairKey];
+          const ttfrDiff = (diffs.timingDifferences?.ttfrMs || {})[pairKey];
+          const adsDiff = (diffs.adsDifferences || {})[pairKey];
+          const media = (diffs.mediaDifferences || {})[pairKey] || {};
+          const syncOverlap = (diffs.syncDifferences?.windowOverlap || {})[pairKey] || {};
+          const startSkewMs = (diffs.syncDifferences?.startSkewMs || {})[pairKey];
+          addPair(pairKey, {
+            request_diff: requestDiff ?? 0,
+            error_diff: errorDiff ?? 0,
+            tracking_diff: (diffs.trackingDifferences || {})[pairKey] ?? 0,
+            ads_diff: adsDiff ?? 0,
+            media_total_diff: media.total ?? 0,
+            media_size_diff: media.size ?? 0,
+            ttfr_diff_ms: ttfrDiff ?? 0,
+            start_skew_ms: startSkewMs ?? 0,
+            overlap_ratio: typeof syncOverlap.overlapRatio === 'number' ? syncOverlap.overlapRatio : 0,
+          });
+        }
+      }
+
+      // Optional: Top-N Paar-Differenzen wählen
+      if (typeof opts.compactTopPairs === 'number' && opts.compactTopPairs > 0 && pairRows.length > opts.compactTopPairs) {
+        const scoreField = opts.compactTopPairsBy === 'ttfr_abs_diff' ? 'ttfr_diff_ms' : 'request_diff';
+        pairRows.sort((a, b) => Math.abs(b[scoreField]) - Math.abs(a[scoreField]));
+        pairRows.length = opts.compactTopPairs;
+      }
+    }
+
+    return opts.compactIncludePairs ? perClientRows.concat(pairRows) : perClientRows;
+  }
+
+  /**
+   * Erzeugt eine kompakte Crawl-Übersicht mit:
+   * - erfolgreich auf allen Clients gecrawlte URLs
+   * - fehlgeschlagene URLs (nicht alle Clients erfolgreich)
+   * - Sync-Delta Statistiken (Spread der ersten Requests)
+   * - Aggregierte Metriken pro Gruppe (A vs B)
+   * - Liste signifikanter Abweichungen (Top-N)
+   */
+  _buildCrawlOverview(results, { asRow = false } = {}) {
+    const empty = asRow ? { type: 'overview' } : { };
+    if (!results || !results.urlComparisons || !results.clientSummary) return empty;
+
+    const opts = this.options;
+    const urlEntries = Object.entries(results.urlComparisons || {});
+
+    // 1) Erfolg/Fehlschlag pro URL
+    const allClients = Object.keys(results.clientSummary || {});
+    const succeededUrls = [];
+    const failedUrls = [];
+    const perUrlFailureDetails = {};
+    const failureCountBuckets = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0 };
+    for (const [url, comp] of urlEntries) {
+      let okForAll = true;
+      const urlStatus = { failingClients: [], succeededClients: [], requestsByClient: {} };
+      for (const c of allClients) {
+        const m = comp.clients?.[c];
+        const hasRequests = !!(m && !m.error && (m.totalRequests || 0) > 0);
+        urlStatus.requestsByClient[c] = m ? (m.totalRequests || 0) : 0;
+        if (hasRequests) urlStatus.succeededClients.push(c);
+        else { okForAll = false; urlStatus.failingClients.push(c); }
+      }
+      if (okForAll) succeededUrls.push(url);
+      else {
+        failedUrls.push(url);
+        perUrlFailureDetails[url] = urlStatus;
+        const k = String(urlStatus.failingClients.length);
+        if (failureCountBuckets[k] !== undefined) failureCountBuckets[k]++;
+      }
+    }
+
+    // 2) Sync-Delta Statistiken: Spread der Start→erste Anfrage (perUrl)
+    const spreads = Object.values(results.timingSpreads?.perUrl || {}).map(v => Number(v.spreadMs || 0)).filter(v => !isNaN(v));
+    const spreadStats = this._stats(spreads);
+
+    // 3) Gruppen-Aggregate
+    const groupA = this._aggregateGroup(results, opts.groupA);
+    const groupB = this._aggregateGroup(results, opts.groupB);
+
+    // 4) Signifikante Abweichungen (Top-N nach absoluter Request-Diff zwischen Gruppen-Mittel je URL)
+    const significantList = this._findSignificantUrls(results, opts);
+
+    const totalHarFiles = Object.values(results.clientSummary || {}).reduce((acc, s) => acc + (s.harFilesFound || 0), 0);
+    const overview = {
+      crawl: {
+        totalUrls: results.overallSummary?.totalUrls || 0,
+        totalClients: results.overallSummary?.totalClients || 0,
+        succeededUrlsCount: succeededUrls.length,
+        failedUrlsCount: failedUrls.length,
+        failedUrls: failedUrls.slice(0, opts.failedUrlsMaxList),
+        failures: {
+          counts: {
+            allOk: succeededUrls.length,
+            anyFail: failedUrls.length,
+            byFailingClients: failureCountBuckets
+          },
+          byUrl: Object.entries(perUrlFailureDetails).map(([u, d]) => ({ url: u, ...d }))
+        },
+        totalHarFiles
+      },
+      syncDelta: {
+        meanMs: spreadStats.mean,
+        medianMs: spreadStats.p50,
+        minMs: spreadStats.min,
+        maxMs: spreadStats.max,
+      },
+      groups: { A: groupA, B: groupB },
+      significantDifferences: significantList,
+      generatedAt: new Date().toISOString(),
+    };
+
+    if (asRow) return { type: 'overview', ...overview };
+    return overview;
+  }
+
+  /**
+   * Baut eine kompakte Zusammenfassung ähnlich Helper/experiment_stats_summary.json
+   * - synchronization_delta_ms (Summary-Stats des Spreads pro URL)
+   * - intra_group (Absolutdifferenzen der zwei Worker pro Gruppe, pro URL)
+   * - inter_group_abs_diff (Absolutdifferenzen der Gruppenmittel je URL)
+   * - outliers (Top-URLs mit großen Abweichungen)
+   */
+  _buildCompactSummary(results) {
+    if (!results || !results.urlComparisons) return {};
+
+    const patternA = new RegExp(this.options.groupA?.pattern || '', 'i');
+    const patternB = new RegExp(this.options.groupB?.pattern || '', 'i');
+
+    // Helper to summarize arrays
+    const summarize = (arr) => {
+      const values = (arr || []).filter(v => typeof v === 'number' && isFinite(v));
+      const n = values.length;
+      if (n === 0) {
+        return { n: 0, mean: null, stddev: null, min: null, p25: null, median: null, p75: null, p90: null, p95: null, max: null };
+      }
+      const sorted = [...values].sort((a,b)=>a-b);
+      const mean = sorted.reduce((a,b)=>a+b,0) / n;
+      const variance = sorted.reduce((acc,v)=>acc + Math.pow(v-mean,2), 0) / n;
+      const stddev = Math.sqrt(variance);
+      const q = (p) => {
+        const pos = (n-1) * p;
+        const base = Math.floor(pos);
+        const rest = pos - base;
+        return sorted[base+1] !== undefined ? sorted[base] + rest * (sorted[base+1] - sorted[base]) : sorted[base];
+      };
+      return {
+        n,
+        mean,
+        stddev,
+        min: sorted[0],
+        p25: q(0.25),
+        median: q(0.5),
+        p75: q(0.75),
+        p90: q(0.9),
+        p95: q(0.95),
+        max: sorted[n-1]
+      };
+    };
+
+    // Bucketing of status codes
+    const toBins = (responsesByCode) => {
+      const bins = { s2xx: 0, s3xx: 0, s4xx: 0, s5xx: 0 };
+      if (responsesByCode) {
+        for (const [codeStr, count] of Object.entries(responsesByCode)) {
+          const code = Number(codeStr);
+          if (code >= 200 && code < 300) bins.s2xx += count;
+          else if (code >= 300 && code < 400) bins.s3xx += count;
+          else if (code >= 400 && code < 500) bins.s4xx += count;
+          else if (code >= 500 && code < 600) bins.s5xx += count;
+        }
+      }
+      return bins;
+    };
+
+    // Accumulators
+    const intraA = { requests: [], tracking: [], media_total: [], media_size: [], status2xx: [], status4xx: [], status5xx: [], ttfr_ms: [] };
+    const intraB = { requests: [], tracking: [], media_total: [], media_size: [], status2xx: [], status4xx: [], status5xx: [], ttfr_ms: [] };
+    const inter = { requests: [], tracking: [], media_total: [], media_size: [], status2xx: [], status4xx: [], status5xx: [], ttfr_ms: [] };
+    const outliers = [];
+
+    // Sync spreads per URL (already computed in overview, but produce full stats here)
+    const syncSpreads = Object.values(results.timingSpreads?.perUrl || {}).map(v => Number(v.spreadMs || 0)).filter(v => !isNaN(v));
+
+    // Iterate URLs
+    for (const [url, comp] of Object.entries(results.urlComparisons)) {
+      const clients = Object.keys(comp.clients || {});
+      const groupAClients = clients.filter(c => patternA.test(c));
+      const groupBClients = clients.filter(c => patternB.test(c));
+
+      // Helper to extract per-client metrics
+      const extract = (m) => {
+        const bins = toBins(m.responsesByCode);
+        return {
+          requests: m.totalRequests || 0,
+          tracking: (m.trackingRequests?.total) || 0,
+          media_total: (m.mediaFiles?.total) || 0,
+          media_size: (m.mediaFiles?.size) || 0,
+          status2xx: bins.s2xx,
+          status4xx: bins.s4xx,
+          status5xx: bins.s5xx,
+          ttfr_ms: (m.sync?.firstRequestOffsetMs) ?? 0,
+        };
+      };
+
+      // Intra-group diffs (only if exactly two clients in group)
+      const pushIntra = (groupClients, acc) => {
+        if (groupClients.length !== 2) return;
+        const m1 = extract(comp.clients[groupClients[0]] || {});
+        const m2 = extract(comp.clients[groupClients[1]] || {});
+        acc.requests.push(Math.abs(m1.requests - m2.requests));
+        acc.tracking.push(Math.abs(m1.tracking - m2.tracking));
+        acc.media_total.push(Math.abs(m1.media_total - m2.media_total));
+        acc.media_size.push(Math.abs(m1.media_size - m2.media_size));
+        acc.status2xx.push(Math.abs(m1.status2xx - m2.status2xx));
+        acc.status4xx.push(Math.abs(m1.status4xx - m2.status4xx));
+        acc.status5xx.push(Math.abs(m1.status5xx - m2.status5xx));
+        acc.ttfr_ms.push(Math.abs(m1.ttfr_ms - m2.ttfr_ms));
+      };
+      pushIntra(groupAClients, intraA);
+      pushIntra(groupBClients, intraB);
+
+      // Inter-group: abs difference of group means (if both groups have at least one client)
+      const groupMean = (groupClients, key) => {
+        const vals = groupClients.map(c => extract(comp.clients[c] || {})[key]).filter(v => typeof v === 'number' && isFinite(v));
+        if (!vals.length) return null;
+        return vals.reduce((a,b)=>a+b,0)/vals.length;
+      };
+      const keys = ['requests','tracking','media_total','media_size','status2xx','status4xx','status5xx','ttfr_ms'];
+      for (const k of keys) {
+        const mA = groupMean(groupAClients, k);
+        const mB = groupMean(groupBClients, k);
+        if (mA == null || mB == null) continue;
+        const diff = Math.abs(mA - mB);
+        inter[k].push(diff);
+        // basic outlier capture for selected metrics
+        const minReqDiff = this.options.significantMinAbsRequestDiff || 10;
+        if ((k === 'requests' && diff >= minReqDiff) || (k === 'tracking' && diff >= 10) || (k === 'media_total' && diff >= 10)) {
+          outliers.push({ url, metric: k, diff, mA, mB });
+        }
+      }
+    }
+
+    return {
+      synchronization_delta_ms: summarize(syncSpreads),
+      intra_group: {
+        [this.options.groupA?.label || 'GroupA']: {
+          requests: summarize(intraA.requests),
+          tracking: summarize(intraA.tracking),
+          media_total: summarize(intraA.media_total),
+          media_size: summarize(intraA.media_size),
+          status2xx: summarize(intraA.status2xx),
+          status4xx: summarize(intraA.status4xx),
+          status5xx: summarize(intraA.status5xx),
+          ttfr_ms: summarize(intraA.ttfr_ms),
+        },
+        [this.options.groupB?.label || 'GroupB']: {
+          requests: summarize(intraB.requests),
+          tracking: summarize(intraB.tracking),
+          media_total: summarize(intraB.media_total),
+          media_size: summarize(intraB.media_size),
+          status2xx: summarize(intraB.status2xx),
+          status4xx: summarize(intraB.status4xx),
+          status5xx: summarize(intraB.status5xx),
+          ttfr_ms: summarize(intraB.ttfr_ms),
+        }
+      },
+      inter_group_abs_diff: {
+        requests: summarize(inter.requests),
+        tracking: summarize(inter.tracking),
+        media_total: summarize(inter.media_total),
+        media_size: summarize(inter.media_size),
+        status2xx: summarize(inter.status2xx),
+        status4xx: summarize(inter.status4xx),
+        status5xx: summarize(inter.status5xx),
+        ttfr_ms: summarize(inter.ttfr_ms),
+      },
+      outliers: outliers.slice(0, 50),
+    };
+  }
+
+  _aggregateGroup(results, group) {
+    if (!group || !group.pattern) return { label: group?.label || '', clients: [], averages: {} };
+    const pattern = new RegExp(group.pattern, 'i');
+    const selected = Object.entries(results.clientSummary || {}).filter(([name]) => pattern.test(name));
+    const clients = selected.map(([name]) => name);
+    const totals = {
+      requests: 0,
+      errors: 0,
+      tracking: 0,
+      ads: 0,
+      mediaTotal: 0,
+      mediaSize: 0,
+      urls: 0,
+    };
+    for (const [name, stats] of selected) {
+      totals.requests += stats.totalRequests || 0;
+      totals.errors += stats.totalErrors || 0;
+      totals.tracking += (stats.avgTrackingRequestsPerUrl || 0) * (stats.urlsAnalyzed || 0);
+      totals.ads += (stats.avgAdsRequestsPerUrl || 0) * (stats.urlsAnalyzed || 0);
+      totals.mediaTotal += (stats.avgMediaFilesPerUrl || 0) * (stats.urlsAnalyzed || 0);
+      totals.mediaSize += (stats.avgMediaSizePerUrl || 0) * (stats.urlsAnalyzed || 0);
+      totals.urls += stats.urlsAnalyzed || 0;
+    }
+    const averages = totals.urls > 0 ? {
+      requestsPerUrl: totals.requests / totals.urls,
+      errorsPerUrl: totals.errors / totals.urls,
+      trackingPerUrl: totals.tracking / totals.urls,
+      adsPerUrl: totals.ads / totals.urls,
+      mediaFilesPerUrl: totals.mediaTotal / totals.urls,
+      mediaSizePerUrl: totals.mediaSize / totals.urls,
+    } : {
+      requestsPerUrl: 0, errorsPerUrl: 0, trackingPerUrl: 0, adsPerUrl: 0, mediaFilesPerUrl: 0, mediaSizePerUrl: 0
+    };
+    return { label: group.label, clients, averages };
+  }
+
+  _findSignificantUrls(results, opts) {
+    const urlEntries = Object.entries(results.urlComparisons || {});
+    const patternA = new RegExp(opts.groupA?.pattern || '', 'i');
+    const patternB = new RegExp(opts.groupB?.pattern || '', 'i');
+    const rows = [];
+    for (const [url, comp] of urlEntries) {
+      // Mittelwerte der totalRequests je Gruppe für diese URL
+      let sumA = 0, nA = 0, sumB = 0, nB = 0;
+      for (const [client, m] of Object.entries(comp.clients || {})) {
+        if (!m || m.error) continue;
+        if (patternA.test(client)) { sumA += (m.totalRequests || 0); nA++; }
+        if (patternB.test(client)) { sumB += (m.totalRequests || 0); nB++; }
+      }
+      if (nA === 0 || nB === 0) continue;
+      const avgA = sumA / nA;
+      const avgB = sumB / nB;
+      const diff = avgA - avgB;
+      const absDiff = Math.abs(diff);
+      if (absDiff >= (opts.significantMinAbsRequestDiff || 0)) {
+        rows.push({ url, avgRequestsA: avgA, avgRequestsB: avgB, absDiff, diff });
+      }
+    }
+    rows.sort((a,b) => b.absDiff - a.absDiff);
+    const topN = (typeof opts.significantTopN === 'number' && opts.significantTopN > 0) ? opts.significantTopN : rows.length;
+    return rows.slice(0, topN);
+  }
+
+  _stats(arr) {
+    if (!arr || arr.length === 0) return { mean: 0, p50: 0, min: 0, max: 0 };
+    const sorted = [...arr].sort((a,b)=>a-b);
+    const mean = sorted.reduce((a,b)=>a+b,0)/sorted.length;
+    const p50 = sorted[Math.floor(sorted.length*0.5)];
+    const min = sorted[0];
+    const max = sorted[sorted.length-1];
+    return { mean, p50, min, max };
+  }
+
+  /**
+   * Erzeugt stabile kurze Hash-IDs für Strings
+   */
+  _stableHashId(input) {
+    // djb2
+    let hash = 5381;
+    for (let i = 0; i < input.length; i++) {
+      hash = ((hash << 5) + hash) + input.charCodeAt(i);
+      hash |= 0; // 32-bit
+    }
+    // Convert to unsigned and base36 to shorten
+    const unsigned = hash >>> 0;
+    return `u_${unsigned.toString(36)}`;
   }
 
   /**
@@ -939,7 +1429,9 @@ class HarAnalyzer {
             // Add media and tracking stats to summary
             avgTrackingRequestsPerUrl: clientStats.avgTrackingRequestsPerUrl || 0,
             avgMediaFilesPerUrl: clientStats.avgMediaFilesPerUrl || 0,
-            avgMediaSizePerUrl: clientStats.avgMediaSizePerUrl || 0
+            avgMediaSizePerUrl: clientStats.avgMediaSizePerUrl || 0,
+            harFilesFound: clientStats.harFilesFound || 0,
+            urlsWithHarFiles: clientStats.urlsWithHarFiles || 0
           };
         }
       }
@@ -978,10 +1470,16 @@ class HarAnalyzer {
 
     // Neue, "tidy" CSV-Logik für wissenschaftliche Analyse
     const clients = Object.keys(results.clientSummary || {});
-    if (clients.length === 0) return 'url,client,requests,errors,ttfr_ms,tracking_reqs,ads_reqs\n';
+    if (clients.length === 0) return 'url,client,requests,errors,ttfr_ms,tracking_reqs,ads_reqs,media_total,media_size,status_2xx,status_3xx,status_4xx,status_5xx,har_count\n';
 
     // Header
-    const header = ['url', 'client', 'requests', 'errors', 'ttfr_ms', 'tracking_reqs', 'ads_reqs'];
+    const header = [
+      'url', 'client', 'requests', 'errors', 'ttfr_ms',
+      'tracking_reqs', 'ads_reqs',
+      'media_total', 'media_size',
+      'status_2xx', 'status_3xx', 'status_4xx', 'status_5xx',
+      'has_requests', 'har_count'
+    ];
     let csvRows = [header.join(',')];
 
     // Zeilen für jede URL und jeden Client erstellen
@@ -994,16 +1492,39 @@ class HarAnalyzer {
         ];
 
         if (metrics && !metrics.error) {
+          // Statuscode-Buckets
+          const bins = (() => {
+            const b = { s2xx: 0, s3xx: 0, s4xx: 0, s5xx: 0 };
+            if (metrics.responsesByCode) {
+              for (const [codeStr, count] of Object.entries(metrics.responsesByCode)) {
+                const code = Number(codeStr);
+                if (code >= 200 && code < 300) b.s2xx += count;
+                else if (code >= 300 && code < 400) b.s3xx += count;
+                else if (code >= 400 && code < 500) b.s4xx += count;
+                else if (code >= 500 && code < 600) b.s5xx += count;
+              }
+            }
+            return b;
+          })();
+          const hasRequests = (metrics.totalRequests || 0) > 0 ? 1 : 0;
           row.push(
             metrics.totalRequests || 0,
             metrics.totalErrors || 0,
             metrics.sync?.firstRequestOffsetMs ?? 0,
             metrics.trackingRequests?.total || 0,
-            metrics.trackingRequests?.adsTotal || 0
+            metrics.trackingRequests?.adsTotal || 0,
+            metrics.mediaFiles?.total || 0,
+            metrics.mediaFiles?.size || 0,
+            bins.s2xx,
+            bins.s3xx,
+            bins.s4xx,
+            bins.s5xx,
+            hasRequests,
+            metrics.harFilesCount || 0
           );
         } else {
           // Fehlerfall oder fehlende Daten
-          row.push('N/A', 'N/A', 'N/A', 'N/A', 'N/A');
+          row.push('N/A', 'N/A', 'N/A', 'N/A', 'N/A', 'N/A', 'N/A', 'N/A', 'N/A', 'N/A', 'N/A', 'N/A');
         }
         csvRows.push(row.join(','));
       }
@@ -1225,6 +1746,10 @@ class HarAnalyzer {
             <h3>Ø Abweichung 1. Request</h3>
             <p>${(results.timingSpreads?.overall?.mean || 0).toFixed(1)} ms</p>
           </div>
+          <div class="summary-item">
+            <h3>HAR-Dateien gesamt</h3>
+            <p>${Object.values(results.clientSummary || {}).reduce((a, s) => a + (s.harFilesFound || 0), 0)}</p>
+          </div>
         </div>
       </div>
     `;
@@ -1288,6 +1813,7 @@ class HarAnalyzer {
           <button class="tab" onclick="openTab(event, 'tab-requests')">Anfragen</button>
           <button class="tab" onclick="openTab(event, 'tab-errors')">Fehler</button>
           <button class="tab" onclick="openTab(event, 'tab-failed-urls')">Fehlgeschlagene URLs</button>
+          <button class="tab" onclick="openTab(event, 'tab-har')">HAR-Dateien</button>
           <button class="tab" onclick="openTab(event, 'tab-tracking')">Tracking</button>
           <button class="tab" onclick="openTab(event, 'tab-media')">Medien</button>
           <button class="tab" onclick="openTab(event, 'tab-unique-urls')">Einzigartige URLs</button>
@@ -1309,6 +1835,8 @@ class HarAnalyzer {
                 <th>Ø Werbe-Anfragen / URL</th>
                 <th>Ø Mediendateien / URL</th>
                 <th>Ø Mediengröße / URL</th>
+                <th>HAR-Dateien</th>
+                <th>URLs mit HAR</th>
               </tr>
             </thead>
             <tbody>
@@ -1336,6 +1864,8 @@ class HarAnalyzer {
           <td>${(stats.avgAdsRequestsPerUrl || 0).toFixed(2)}</td>
           <td>${(stats.avgMediaFilesPerUrl || 0).toFixed(2)}</td>
           <td>${formatBytes(stats.avgMediaSizePerUrl || 0)}</td>
+          <td>${stats.harFilesFound || 0}</td>
+          <td>${stats.urlsWithHarFiles || 0}</td>
         </tr>
       `;
     }
@@ -1433,6 +1963,57 @@ class HarAnalyzer {
         <div id="tab-failed-urls" class="tab-content">
             <h3>URLs ohne Requests</h3>
             <p>Die folgenden Clients haben für die jeweilige URL keine einzige Anfrage aufgezeichnet.</p>
+            <div class="summary-box">
+              ${(() => {
+                const clients = Object.keys(results.clientSummary || {});
+                const buckets = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0 };
+                for (const [url, comp] of Object.entries(results.urlComparisons || {})) {
+                  let failing = 0;
+                  for (const c of clients) {
+                    const m = comp.clients?.[c];
+                    const ok = !!(m && !m.error && (m.totalRequests || 0) > 0);
+                    if (!ok) failing++;
+                  }
+                  buckets[failing] = (buckets[failing] || 0) + 1;
+                }
+                return `
+                  <div class="summary-item"><h3>Alle OK</h3><p>${buckets[0] || 0}</p></div>
+                  <div class="summary-item"><h3>1 Client fehlte</h3><p>${buckets[1] || 0}</p></div>
+                  <div class="summary-item"><h3>2 Clients fehlten</h3><p>${buckets[2] || 0}</p></div>
+                  <div class="summary-item"><h3>3 Clients fehlten</h3><p>${buckets[3] || 0}</p></div>
+                  <div class="summary-item"><h3>4 Clients fehlten</h3><p>${buckets[4] || 0}</p></div>
+                `;
+              })()}
+            </div>
+
+            <h4>Statusmatrix pro URL/Client</h4>
+            <table>
+              <thead>
+                <tr>
+                  <th>URL</th>
+                  ${Object.keys(results.clientSummary || {}).map(c => `<th>${c}</th>`).join('')}
+                </tr>
+              </thead>
+              <tbody>
+                ${(() => {
+                  const clients = Object.keys(results.clientSummary || {});
+                  const rows = [];
+                  for (const [url, comp] of Object.entries(results.urlComparisons || {})) {
+                    let failing = 0;
+                    const cells = clients.map(c => {
+                      const m = comp.clients?.[c];
+                      const ok = !!(m && !m.error && (m.totalRequests || 0) > 0);
+                      if (!ok) failing++;
+                      return `<td class="${ok ? 'success' : 'error'}">${ok ? 'OK' : 'FAIL'}</td>`;
+                    }).join('');
+                    if (failing > 0) rows.push(`<tr><td>${url}</td>${cells}</tr>`);
+                  }
+                  return rows.join('');
+                })()}
+              </tbody>
+            </table>
+
+            <h4>Liste der (URL, Client) ohne Requests</h4>
             <table>
                 <thead>
                     <tr>
@@ -1449,6 +2030,31 @@ class HarAnalyzer {
                     `).join('') || '<tr><td colspan="2">Keine fehlgeschlagenen URLs gefunden.</td></tr>'}
                 </tbody>
             </table>
+        </div>
+
+        <!-- HAR-Dateien Tab -->
+        <div id="tab-har" class="tab-content">
+          <h3>HAR-Datei-Übersicht</h3>
+          <p>Anzahl .har Dateien pro URL und Client.</p>
+          <table>
+            <thead>
+              <tr>
+                <th>URL</th>
+                <th>Client</th>
+                <th>HAR-Dateien</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${Object.entries(results.urlComparisons || {}).map(([url, comp]) => {
+                const rows = [];
+                for (const [client, m] of Object.entries(comp.clients || {})) {
+                  const count = m.harFilesCount || 0;
+                  rows.push(`<tr><td>${url}</td><td>${client}</td><td>${count}</td></tr>`);
+                }
+                return rows.join('');
+              }).join('')}
+            </tbody>
+          </table>
         </div>
 
         <!-- Tracking-Tab -->

@@ -21,13 +21,28 @@ program
   .version(version)
   .description('HAR-Analyse-Tool für den Vergleich verschiedener Crawl-Clients')
   .option('-d, --crawl-dir <dir>', 'Verzeichnis mit HAR-Dateien (Crawl-Ordner)', path.join(__dirname, '../crawl_data'))
-  .option('-o, --output-dir <dir>', 'Ausgabeverzeichnis für Berichte', path.join(__dirname, '../analysis_results'))
-  .option('-f, --format <format>', 'Ausgabeformat (json, html, csv oder all)', 'all')
+  .option('-o, --output-dir <dir>', 'Ausgabeverzeichnis für Berichte (Standard: gleich dem Crawl-Verzeichnis)')
+  .option('-f, --format <format>', 'Ausgabeformat (json, html, csv, jsonl oder all)', 'all')
   .option('--disable-adblock', 'AdBlock-Analyse deaktivieren (standardmäßig aktiv)')
   .option('--disable-media', 'Medienanalyse deaktivieren (standardmäßig aktiv)')
   .option('--normalize-urls', 'URL-Query-Parameter normalisieren, um dynamische IDs zu entfernen')
   .option('-v, --verbose', 'Ausführliche Ausgabe')
   .option('--include-requests-in-json', 'Schließt detaillierte Request-Listen in die JSON-Ausgabe ein')
+  // Kompakt-Export-Optionen
+  .option('--compact-anonymize <mode>', 'Anonymisierung: none | domain | hash', 'none')
+  .option('--compact-include-pairs', 'Zusätzliche Paar-Differenzen aufnehmen', false)
+  .option('--compact-max-urls <n>', 'Maximale Anzahl URLs im kompakten Export', (v)=>parseInt(v,10))
+  .option('--compact-top-pairs <n>', 'Top-N Paare nach Score im kompakten Export', (v)=>parseInt(v,10))
+  .option('--compact-top-pairs-by <field>', 'Score-Feld: abs_request_diff | ttfr_abs_diff', 'abs_request_diff')
+  // Gruppierung (zwei Gruppen, z.B. OpenWPM vs Native Firefox)
+  .option('--group-a-label <label>', 'Label der Gruppe A', 'OpenWPM')
+  .option('--group-a-pattern <regex>', 'Regex für Clients in Gruppe A', 'openwpm')
+  .option('--group-b-label <label>', 'Label der Gruppe B', 'FirefoxNative')
+  .option('--group-b-pattern <regex>', 'Regex für Clients in Gruppe B', 'firefox|native')
+  // Signifikanz / Zusammenfassungslisten
+  .option('--significant-top-n <n>', 'Top-N URLs mit stärkster Abweichung', (v)=>parseInt(v,10), 50)
+  .option('--significant-min-abs-request-diff <n>', 'Mindestschwelle absolute Request-Differenz', (v)=>parseInt(v,10), 10)
+  .option('--failed-urls-max-list <n>', 'Maximale Anzahl gelisteter fehlgeschlagener URLs', (v)=>parseInt(v,10), 200)
   .parse(process.argv);
 
 const options = program.opts();
@@ -38,7 +53,7 @@ const config = {
   crawlDirectory: options.crawlDir,
   
   // Ausgabeverzeichnis
-  outputDirectory: options.outputDir,
+  outputDirectory: options.outputDir || options.crawlDir,
   
   // Ausgabeformat
   outputFormat: options.format,
@@ -50,6 +65,16 @@ const config = {
     normalizeUrls: options.normalizeUrls,
     verbose: options.verbose, // Pass verbose option to analyzer
     includeRequestsInJson: options.includeRequestsInJson,
+    compactAnonymize: options.compactAnonymize,
+    compactIncludePairs: !!options.compactIncludePairs,
+    compactMaxUrls: typeof options.compactMaxUrls === 'number' && !isNaN(options.compactMaxUrls) ? options.compactMaxUrls : undefined,
+    compactTopPairs: typeof options.compactTopPairs === 'number' && !isNaN(options.compactTopPairs) ? options.compactTopPairs : undefined,
+    compactTopPairsBy: options.compactTopPairsBy,
+    groupA: { label: options.groupALabel, pattern: options.groupAPattern },
+    groupB: { label: options.groupBLabel, pattern: options.groupBPattern },
+    significantTopN: options.significantTopN,
+    significantMinAbsRequestDiff: options.significantMinAbsRequestDiff,
+    failedUrlsMaxList: options.failedUrlsMaxList,
   },
   
   // Ausführliche Ausgabe
@@ -102,7 +127,7 @@ async function main() {
   
   // Ausgabeformate bestimmen
   const formats = config.outputFormat.toLowerCase() === 'all' 
-    ? ['json', 'html', 'csv'] 
+    ? ['json', 'html', 'csv', 'jsonl'] 
     : [config.outputFormat.toLowerCase()];
   
   // Detaillierte Ergebnisse (werden nicht mehr separat gespeichert)
@@ -134,6 +159,11 @@ async function main() {
       }
       console.log(`CSV-Zusammenfassung wurde gespeichert in:`);
       console.log(`- ${csvOutputPath}`);
+    } else if (format === 'jsonl') {
+      if (!comparison.error) {
+        analyzer.exportResults(comparison, `${reportPath}.jsonl`, 'jsonl');
+      }
+      console.log(`JSONL-Datensatz wurde gespeichert in: ${reportPath}.jsonl`);
     } else {
       console.warn(`Warnung: Unbekanntes Format "${format}" wird ignoriert.`);
     }

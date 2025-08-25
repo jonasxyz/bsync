@@ -1,10 +1,10 @@
 const os = require('os');
 const configuration = {
-	activeWorker: "puppeteer", 							// Set this to "puppeteer" or "OpenWPM" or "native_firefox"
+	activeWorker: "OpenWPM", 							// Set this to "puppeteer" or "OpenWPM" or "native_firefox"
 
 	base: {
 		master_addr: "http://10.10.10.11:3000", 		// e.g. "http://localhost:3000"
-		pagevisit_duration: 3,							// Specify time in seconds the browser stays on websites
+		pagevisit_duration: 10,							// Specify time in seconds the browser stays on websites
 
 		nfs_remote_filestorage: true,					// Set true to store har files on nfs server
 		delete_after_upload: true,						// Set true to delete the local har files after upload
@@ -23,7 +23,7 @@ const configuration = {
 
 		crawl_script: "puppeteer_synced.js", 
 		script_path: __dirname + "/puppeteer",
-		browser_path : "/opt/firefox-138.0.1/firefox",
+		browser_path : "/opt/firefox-134.0.1/firefox",
 		crawl_data_path: "/home/" + os.userInfo().username +"/Downloads/Crawl-Data/",
 
 		enable_proxy : true, 							// Set false to disable mitmproxy

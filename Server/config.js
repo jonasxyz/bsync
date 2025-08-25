@@ -4,8 +4,8 @@ const config = module.exports = {
     ip : "http://10.10.10.11",        // insert master-server ip
     port : 3000,                      // set master-server port (default 3000)
     allowed_ping : 100,               // set allowed ping between clients and server
-    url_list : "tranco_100.csv",      // insert name of the list containing the websites to crawl (.txt or .csv)
-    calibration_runs : 2,             // set number of runs measuring the http access time between browsers (default 10)
+    url_list : "tranco_5X8WN-100.csv",      // insert name of the list containing the websites to crawl (.txt or .csv)
+    calibration_runs : 5,             // set number of runs measuring the http access time between browsers (default 10)
     re_calibration : 1010,            // repeat calibration afer number of websites crawled (default 100)
     re_calibration_dc: false,         // recalibarte after reconnection of worker
 

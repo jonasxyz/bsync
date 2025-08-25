@@ -222,7 +222,7 @@ function createUrlIterationConfig(jobData) { // urlIndex is 1-based
       config.url = masterAdress + "/client/" + socket.id;
       config.userAgent = worker.client_name;
       config.waitingTime = waitingTime;
-      config.visitDuration = 2;
+      //config.visitDuration = 2;
       
   } else {
       config.url = clearUrl;

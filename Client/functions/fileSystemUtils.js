@@ -90,7 +90,10 @@ function checkBackslash(str) {
  * @returns {string} - Sanitized string for use in file paths
  */
 function replaceDotWithUnderscore(str) {
-    return str.replace(/\//g, '-').replace(/[\.:?&=]/g, '_');
+    // Remove protocol (http, https) and 'www.'
+    const cleanedUrl = str.replace(/^(https?:\/\/)?(www\.)?/, '');
+    // Replace remaining problematic characters
+    return cleanedUrl.replace(/\//g, '-').replace(/[\.:?&=]/g, '_');
 }
 
 /**
